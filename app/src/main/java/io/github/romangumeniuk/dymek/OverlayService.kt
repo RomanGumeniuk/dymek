@@ -163,7 +163,7 @@ class OverlayService : Service() {
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_bubble)
             .setContentTitle("Dymek działa")
-            .setContentText("Stuknij pomarańczowy przycisk, żeby zapytać Claude.")
+            .setContentText("Stuknij pomarańczowy przycisk, żeby zapytać AI o pytanie z ekranu.")
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Wyłącz", stop).build())
             .build()
@@ -268,7 +268,7 @@ class OverlayService : Service() {
             gravity = Gravity.CENTER
             setTextColor(0xFFFFFFFF.toInt())
             setTypeface(typeface, Typeface.BOLD)
-            contentDescription = "Zapytaj Claude o pytanie z ekranu"
+            contentDescription = "Zapytaj AI o pytanie z ekranu"
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(ACCENT)

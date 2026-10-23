@@ -22,7 +22,7 @@ Do wyboru płatny **Claude** albo darmowy **Gemini**.
 
 | Gest | Co robi |
 | --- | --- |
-| Stuknięcie przycisku `?` | zrzut ekranu i pytanie do Claude |
+| Stuknięcie przycisku `?` | zrzut ekranu i pytanie do AI |
 | Stuknięcie dymka | zamyka dymek |
 | Przeciągnięcie | przesuwa przycisk |
 | Przytrzymanie | wyłącza Dymek |
