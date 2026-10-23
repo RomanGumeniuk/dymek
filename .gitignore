@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.kotlin/
+
+# klucz do podpisywania nigdy nie trafia do repo
+keystore.properties
+*.jks
+*.keystore
