@@ -27,7 +27,8 @@ import android.widget.Toast
 /** Ekran ustawien: klucz API, model i wlaczanie plywajacego przycisku. */
 class MainActivity : Activity() {
     private lateinit var settings: Settings
-    private lateinit var keyInput: EditText
+    private lateinit var claudeKeyInput: EditText
+    private lateinit var geminiKeyInput: EditText
     private lateinit var modelGroup: RadioGroup
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,30 +50,10 @@ class MainActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         column.addView(TextView(this).apply {
-            text = "Pływający przycisk nad innymi aplikacjami. Stuknij go, a Claude przeczyta pytanie z ekranu " +
+            text = "Pływający przycisk nad innymi aplikacjami. Stuknij go, a AI (Claude albo darmowy Gemini) " +
+                "przeczyta pytanie z ekranu " +
                 "i pokaże krótką odpowiedź w dymku. Przytrzymaj przycisk, żeby go wyłączyć."
             setPadding(0, dp(8), 0, dp(20))
-        })
-
-        column.addView(label("Klucz API Claude"))
-        keyInput = EditText(this).apply {
-            hint = "sk-ant-..."
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine()
-            setText(settings.apiKey)
-        }
-        column.addView(keyInput, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        column.addView(Button(this).apply {
-            text = "Pobierz klucz z konsoli Claude"
-            setOnClickListener {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.claude.com/settings/keys")))
-            }
-        })
-        column.addView(TextView(this).apply {
-            text = "Klucz zostaje tylko na tym telefonie i idzie wyłącznie do api.anthropic.com. " +
-                "Zapytania są płatne z Twojego konta Claude."
-            textSize = 12f
-            setPadding(0, 0, 0, dp(20))
         })
 
         column.addView(label("Model"))
@@ -84,7 +65,31 @@ class MainActivity : Activity() {
                 isChecked = choice == settings.model
             })
         }
-        column.addView(modelGroup)
+        column.addView(modelGroup, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(20) })
+
+        claudeKeyInput = addKeySection(
+            column,
+            title = "Klucz API Claude (płatny)",
+            hint = "sk-ant-...",
+            value = settings.claudeKey,
+            button = "Pobierz klucz z konsoli Claude",
+            url = "https://platform.claude.com/settings/keys",
+            note = "Idzie wyłącznie do api.anthropic.com. Zapytania są płatne z Twojego konta Claude.",
+        )
+        geminiKeyInput = addKeySection(
+            column,
+            title = "Klucz API Gemini (darmowy)",
+            hint = "AIza...",
+            value = settings.geminiKey,
+            button = "Pobierz darmowy klucz z Google AI Studio",
+            url = "https://aistudio.google.com/apikey",
+            note = "Idzie wyłącznie do generativelanguage.googleapis.com. Darmowy plan ma limit zapytań na minutę " +
+                "i na dzień, a Google może używać przesłanych zrzutów do ulepszania swoich usług.",
+        )
+        column.addView(TextView(this).apply {
+            text = "Wystarczy klucz do tego dostawcy, którego model wybrałeś. Klucze zostają tylko na tym telefonie."
+            textSize = 12f
+        })
 
         column.addView(Button(this).apply {
             text = "Włącz dymek"
@@ -109,8 +114,38 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun addKeySection(
+        column: LinearLayout,
+        title: String,
+        hint: String,
+        value: String,
+        button: String,
+        url: String,
+        note: String,
+    ): EditText {
+        column.addView(label(title))
+        val input = EditText(this).apply {
+            this.hint = hint
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setText(value)
+        }
+        column.addView(input, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        column.addView(Button(this).apply {
+            text = button
+            setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        })
+        column.addView(TextView(this).apply {
+            text = note
+            textSize = 12f
+            setPadding(0, 0, 0, dp(16))
+        })
+        return input
+    }
+
     private fun saveForm() {
-        settings.apiKey = keyInput.text.toString()
+        settings.claudeKey = claudeKeyInput.text.toString()
+        settings.geminiKey = geminiKeyInput.text.toString()
         val index = modelGroup.checkedRadioButtonId - 1
         ModelChoice.entries.getOrNull(index)?.let { settings.model = it }
     }
@@ -122,9 +157,15 @@ class MainActivity : Activity() {
 
     private fun start() {
         saveForm()
-        if (!settings.apiKey.startsWith("sk-ant-")) {
-            toast("Wklej klucz API (zaczyna się od sk-ant-).")
-            return
+        when (settings.model.provider) {
+            Provider.CLAUDE -> if (!settings.claudeKey.startsWith("sk-ant-")) {
+                toast("Wklej klucz API Claude (zaczyna się od sk-ant-) albo wybierz darmowy model Gemini.")
+                return
+            }
+            Provider.GEMINI -> if (settings.geminiKey.isEmpty()) {
+                toast("Wklej darmowy klucz Gemini z Google AI Studio.")
+                return
+            }
         }
         if (!SystemSettings.canDrawOverlays(this)) {
             toast("Zezwól Dymkowi na wyświetlanie nad innymi aplikacjami, potem wróć i stuknij jeszcze raz.")

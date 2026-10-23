@@ -1,14 +1,18 @@
 # Dymek
 
 Aplikacja na Androida: pływający przycisk nad innymi aplikacjami. Stukasz go, telefon robi zrzut ekranu,
-Claude czyta pytanie (np. z quizu) i pokazuje krótką odpowiedź w dymku obok przycisku.
+AI czyta pytanie (np. z quizu) i pokazuje krótką odpowiedź w dymku obok przycisku.
+Do wyboru płatny **Claude** albo darmowy **Gemini**.
 
 ## Instalacja
 
 1. Pobierz `dymek.apk` z zakładki [Releases](../../releases/latest) i zainstaluj
    (Android poprosi o zgodę na instalację z nieznanego źródła).
-2. Wejdź na [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys), utwórz klucz API
-   i wklej go w aplikacji. Zapytania są płatne z Twojego konta Claude.
+2. Wklej w aplikacji klucz API jednego z dostawców:
+   - **Gemini (darmowy):** klucz z [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+     Darmowy plan ma limit zapytań na minutę i na dzień, a Google może używać przesłanych zrzutów do ulepszania usług.
+   - **Claude (płatny):** klucz z [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys).
+     Zapytania są płatne z Twojego konta Claude.
 3. Wybierz model i stuknij **Włącz dymek**. Za pierwszym razem Android poprosi o:
    - wyświetlanie nad innymi aplikacjami,
    - powiadomienia (tam jest przycisk „Wyłącz”),
@@ -23,8 +27,17 @@ Claude czyta pytanie (np. z quizu) i pokazuje krótką odpowiedź w dymku obok p
 | Przeciągnięcie | przesuwa przycisk |
 | Przytrzymanie | wyłącza Dymek |
 
-Modele: **Opus 5.5** (domyślny, najdokładniejszy), **Sonnet 5.5** (szybszy), **Haiku 5.5** (najszybszy i najtańszy).
-W quizie na czas warto przełączyć na Haiku albo Sonnet.
+Modele:
+
+| Model | Koszt | Uwagi |
+| --- | --- | --- |
+| Claude Opus 5.5 | płatny | domyślny, najdokładniejszy |
+| Claude Sonnet 5.5 | płatny | szybszy |
+| Claude Haiku 5.5 | płatny, najtańszy | najszybszy z Claude |
+| Gemini 3.8 Flash | darmowy | z limitami Google |
+| Gemini 3.5 Flash-Lite | darmowy | najszybszy, z limitami Google |
+
+W quizie na czas warto wybrać szybszy model.
 
 ## Jak to działa
 
@@ -32,8 +45,9 @@ W quizie na czas warto przełączyć na Haiku albo Sonnet.
   i prosi o zgody.
 - `OverlayService` to usługa pierwszoplanowa z `MediaProjection`: trzyma ostatnią klatkę ekranu, a po stuknięciu
   chowa przycisk, bierze klatkę, zmniejsza ją do 1568 px i wysyła jako JPEG.
-- `Answerer` woła Messages API przez oficjalne SDK `com.anthropic:anthropic-java`. Klucz idzie tylko do
-  `api.anthropic.com`.
+- `ClaudeAnswerer` woła Messages API przez oficjalne SDK `com.anthropic:anthropic-java`
+  (klucz idzie tylko do `api.anthropic.com`).
+- `GeminiAnswerer` woła REST `generateContent` (klucz w nagłówku, tylko do `generativelanguage.googleapis.com`).
 
 Ograniczenia: aplikacje blokujące zrzuty ekranu (bankowe, niektóre z DRM) dają czarny obraz.
 Na iOS taka aplikacja nie jest możliwa (system nie pozwala na nakładki i zrzuty innych aplikacji).

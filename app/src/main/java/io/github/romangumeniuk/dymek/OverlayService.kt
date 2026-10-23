@@ -120,8 +120,7 @@ class OverlayService : Service() {
             )
         }
 
-        val settings = Settings(this)
-        answerer = Answerer(settings.apiKey, settings.model)
+        answerer = Answerer.create(Settings(this))
         showButton()
         return START_NOT_STICKY
     }
