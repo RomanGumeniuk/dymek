@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -24,7 +25,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
-/** Ekran ustawien: klucz API, model i wlaczanie plywajacego przycisku. */
+/** Ekran ustawien: klucz API, model, wyglad i wlaczanie plywajacego przycisku. */
 class MainActivity : Activity() {
     private lateinit var settings: Settings
     private lateinit var claudeKeyInput: EditText
@@ -52,7 +53,8 @@ class MainActivity : Activity() {
         column.addView(TextView(this).apply {
             text = "Pływający przycisk nad innymi aplikacjami. Stuknij go, a AI (Claude albo darmowy Gemini) " +
                 "przeczyta pytanie z ekranu " +
-                "i pokaże krótką odpowiedź w dymku. Przytrzymaj przycisk, żeby go wyłączyć."
+                "i pokaże krótką odpowiedź w dymku. Przytrzymaj przycisk, żeby go wyłączyć, " +
+                "albo przeciągnij go na środek ekranu, żeby zamknąć całą aplikację."
             setPadding(0, dp(8), 0, dp(20))
         })
 
@@ -66,6 +68,19 @@ class MainActivity : Activity() {
             })
         }
         column.addView(modelGroup, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(20) })
+
+        // obie opcje zapisuja sie od razu, a wlaczony dymek od razu zmienia wyglad
+        column.addView(label("Przycisk"))
+        column.addView(CheckBox(this).apply {
+            text = "Mniej widoczny (mały, szary i półprzezroczysty)"
+            isChecked = settings.quietButton
+            setOnCheckedChangeListener { _, checked -> settings.quietButton = checked }
+        })
+        column.addView(CheckBox(this).apply {
+            text = "Przeciągnięcie na środek ekranu zamyka całą aplikację"
+            isChecked = settings.centerQuits
+            setOnCheckedChangeListener { _, checked -> settings.centerQuits = checked }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(20) })
 
         claudeKeyInput = addKeySection(
             column,
@@ -214,7 +229,7 @@ class MainActivity : Activity() {
             .putExtra(OverlayService.EXTRA_RESULT_CODE, resultCode)
             .putExtra(OverlayService.EXTRA_DATA, data)
         startForegroundService(service)
-        toast("Dymek włączony. Otwórz quiz i stuknij pomarańczowy przycisk.")
+        toast("Dymek włączony. Otwórz quiz i stuknij przycisk ?.")
         moveTaskToBack(true)
     }
 

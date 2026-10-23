@@ -25,7 +25,14 @@ Do wyboru płatny **Claude** albo darmowy **Gemini**.
 | Stuknięcie przycisku `?` | zrzut ekranu i pytanie do AI |
 | Stuknięcie dymka | zamyka dymek |
 | Przeciągnięcie | przesuwa przycisk |
+| Przeciągnięcie na środek ekranu (na `✕`) | zamyka całą aplikację, także z listy ostatnich |
 | Przytrzymanie | wyłącza Dymek |
+
+W ustawieniach są dwie opcje przycisku (działają od razu, także przy włączonym dymku):
+
+- **Mniej widoczny:** mały, szary i półprzezroczysty przycisk zamiast pomarańczowego.
+- **Przeciągnięcie na środek ekranu zamyka całą aplikację:** domyślnie włączone. W czasie przeciągania
+  na środku ekranu pojawia się kółko z `✕`; po upuszczeniu na nim dymek się wyłącza, a aplikacja zamyka.
 
 Modele, od najszybszego:
 

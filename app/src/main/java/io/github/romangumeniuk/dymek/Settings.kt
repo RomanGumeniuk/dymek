@@ -1,6 +1,7 @@
 package io.github.romangumeniuk.dymek
 
 import android.content.Context
+import android.content.SharedPreferences
 
 enum class Provider { CLAUDE, GEMINI }
 
@@ -13,7 +14,7 @@ enum class ModelChoice(val id: String, val label: String, val provider: Provider
     OPUS("claude-opus-5-5", "Claude Opus 5.5 (najdokładniejszy, wolniejszy)", Provider.CLAUDE),
 }
 
-/** Klucze API i model w prywatnych ustawieniach aplikacji (bez kopii w chmurze: allowBackup=false). */
+/** Klucze API, model i wyglad przycisku w prywatnych ustawieniach aplikacji (bez kopii w chmurze: allowBackup=false). */
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("dymek", Context.MODE_PRIVATE)
 
@@ -30,10 +31,30 @@ class Settings(context: Context) {
             ?: ModelChoice.GEMINI_LITE
         set(value) = prefs.edit().putString(KEY_MODEL, value.name).apply()
 
+    /** Maly, szary i polprzezroczysty przycisk zamiast pomaranczowego. */
+    var quietButton: Boolean
+        get() = prefs.getBoolean(KEY_QUIET, false)
+        set(value) = prefs.edit().putBoolean(KEY_QUIET, value).apply()
+
+    /** Upuszczenie przycisku na srodku ekranu zamyka cala aplikacje. */
+    var centerQuits: Boolean
+        get() = prefs.getBoolean(KEY_CENTER_QUITS, true)
+        set(value) = prefs.edit().putBoolean(KEY_CENTER_QUITS, value).apply()
+
+    /** Wola [onChange] po kazdej zmianie; zwrocony obiekt trzeba trzymac, bo prefs pamietaja go slabo. */
+    fun listen(onChange: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> onChange() }
+            .also { prefs.registerOnSharedPreferenceChangeListener(it) }
+
+    fun unlisten(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+
     private companion object {
         // "api_key" z wersji 1.0, zeby klucz Claude nie zniknal po aktualizacji
         const val KEY_CLAUDE = "api_key"
         const val KEY_GEMINI = "gemini_key"
         const val KEY_MODEL = "model"
+        const val KEY_QUIET = "quiet_button"
+        const val KEY_CENTER_QUITS = "center_quits"
     }
 }

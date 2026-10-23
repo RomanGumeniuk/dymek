@@ -1,5 +1,6 @@
 package io.github.romangumeniuk.dymek
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -50,6 +52,8 @@ class OverlayService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var uiContext: Context
     private lateinit var wm: WindowManager
+    private lateinit var settings: Settings
+    private var settingsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     // Zrzut ekranu: wszystko ponizej tylko na watku captureHandler
     private val captureThread = HandlerThread("dymek-zrzut").apply { start() }
@@ -78,6 +82,8 @@ class OverlayService : Service() {
     private var bubble: TextView? = null
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private var bubbleShown = false
+    private var target: TextView? = null
+    private var targetShown = false
     private var busy = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -92,6 +98,7 @@ class OverlayService : Service() {
             this
         }
         wm = uiContext.getSystemService(WindowManager::class.java)
+        settings = Settings(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -132,17 +139,22 @@ class OverlayService : Service() {
             )
         }
 
-        answerer = Answerer.create(Settings(this))
+        answerer = Answerer.create(settings)
         main.post(keepWarm)
         showButton()
+        // wyglad przycisku zmienia sie od razu po zaznaczeniu opcji w ustawieniach
+        settingsListener = settings.listen { styleButton() }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         main.removeCallbacksAndMessages(null)
+        settingsListener?.let { settings.unlisten(it) }
+        settingsListener = null
         button?.let { wm.removeView(it) }
         button = null
         hideBubble()
+        hideTarget()
         worker.shutdownNow()
         warmer.shutdownNow()
         answerer?.close()
@@ -177,7 +189,7 @@ class OverlayService : Service() {
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_bubble)
             .setContentTitle("Dymek działa")
-            .setContentText("Stuknij pomarańczowy przycisk, żeby zapytać AI o pytanie z ekranu.")
+            .setContentText("Stuknij przycisk ?, żeby zapytać AI o pytanie z ekranu.")
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Wyłącz", stop).build())
             .build()
@@ -287,20 +299,14 @@ class OverlayService : Service() {
     }
 
     private fun showButton() {
-        val size = dp(56)
+        val size = dp(BUTTON_DP)
         val screen = screenSize()
         val view = TextView(uiContext).apply {
             text = "?"
-            textSize = 26f
             gravity = Gravity.CENTER
             setTextColor(0xFFFFFFFF.toInt())
             setTypeface(typeface, Typeface.BOLD)
             contentDescription = "Zapytaj AI o pytanie z ekranu"
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(ACCENT)
-                setStroke(dp(2), 0xFFFFFFFF.toInt())
-            }
         }
         buttonParams = overlayParams(size, size).apply {
             x = screen.x - size - dp(12)
@@ -309,6 +315,28 @@ class OverlayService : Service() {
         view.setOnTouchListener(DragTouch())
         wm.addView(view, buttonParams)
         button = view
+        styleButton()
+    }
+
+    /** Zwykly przycisk jest pomaranczowy, mniej widoczny: maly, szary i polprzezroczysty. */
+    private fun styleButton() {
+        val view = button ?: return
+        val quiet = settings.quietButton
+        val size = dp(if (quiet) QUIET_BUTTON_DP else BUTTON_DP)
+        view.textSize = if (quiet) 18f else 26f
+        view.alpha = if (quiet) QUIET_ALPHA else 1f
+        view.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (quiet) QUIET_COLOR else ACCENT)
+            if (!quiet) setStroke(dp(2), 0xFFFFFFFF.toInt())
+        }
+        // srodek przycisku zostaje tam, gdzie byl
+        val shift = (buttonParams.width - size) / 2
+        buttonParams.x += shift
+        buttonParams.y += shift
+        buttonParams.width = size
+        buttonParams.height = size
+        keepButtonOnScreen()
     }
 
     private fun keepButtonOnScreen() {
@@ -374,7 +402,64 @@ class OverlayService : Service() {
         }
     }
 
-    /** Przeciaganie przycisku; krotkie stukniecie pyta Claude, przytrzymanie wylacza dymek. */
+    /** Kolko z krzyzykiem na srodku ekranu, widoczne tylko w czasie przeciagania przycisku. */
+    private fun showTarget() {
+        if (targetShown) return
+        val view = target ?: TextView(uiContext).apply {
+            text = "✕"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            contentDescription = "Upuść tu przycisk, żeby zamknąć Dymek"
+        }.also { target = it }
+        highlightTarget(false)
+        val size = dp(TARGET_DP)
+        val params = overlayParams(size, size).apply {
+            gravity = Gravity.CENTER
+            // dotyk idzie dalej, do przeciaganego przycisku
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        wm.addView(view, params)
+        targetShown = true
+    }
+
+    private fun highlightTarget(on: Boolean) {
+        target?.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (on) 0xE0D93025.toInt() else 0x99000000.toInt())
+            setStroke(dp(2), 0xFFFFFFFF.toInt())
+        }
+    }
+
+    /** Czy palec jest nad kolkiem na srodku ekranu (z zapasem, zeby latwo trafic). */
+    private fun isOverTarget(rawX: Float, rawY: Float): Boolean {
+        val view = target ?: return false
+        if (!targetShown || view.width == 0) return false
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        val cx = loc[0] + view.width / 2f
+        val cy = loc[1] + view.height / 2f
+        return hypot(rawX - cx, rawY - cy) < view.width
+    }
+
+    private fun hideTarget() {
+        val view = target ?: return
+        if (targetShown) {
+            wm.removeView(view)
+            targetShown = false
+        }
+    }
+
+    /** Wylacza dymek i zamyka cala aplikacje, razem z ekranem ustawien na liscie ostatnich aplikacji. */
+    private fun quitApp() {
+        getSystemService(ActivityManager::class.java).appTasks.forEach { it.finishAndRemoveTask() }
+        stopSelf()
+    }
+
+    /**
+     * Przeciaganie przycisku; krotkie stukniecie pyta Claude, przytrzymanie wylacza dymek,
+     * a upuszczenie na srodku ekranu zamyka cala aplikacje.
+     */
     private inner class DragTouch : View.OnTouchListener {
         private val slop = ViewConfiguration.get(uiContext).scaledTouchSlop
         private var downX = 0f
@@ -383,6 +468,7 @@ class OverlayService : Service() {
         private var startY = 0
         private var moved = false
         private var longPressed = false
+        private var overTarget = false
         private val longPress = Runnable {
             longPressed = true
             button?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -398,6 +484,7 @@ class OverlayService : Service() {
                     startY = buttonParams.y
                     moved = false
                     longPressed = false
+                    overTarget = false
                     // polaczenie zestawia sie, zanim palec sie podniesie
                     warmUp()
                     main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout() * 2L)
@@ -408,22 +495,36 @@ class OverlayService : Service() {
                     if (!moved && hypot(dx, dy) > slop) {
                         moved = true
                         main.removeCallbacks(longPress)
+                        if (settings.centerQuits) showTarget()
                     }
                     if (moved) {
                         buttonParams.x = startX + dx.toInt()
                         buttonParams.y = startY + dy.toInt()
                         wm.updateViewLayout(v, buttonParams)
                         if (bubbleShown) positionBubble()
+                        val over = isOverTarget(e.rawX, e.rawY)
+                        if (over != overTarget) {
+                            overTarget = over
+                            highlightTarget(over)
+                            if (over) v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        }
                     }
                 }
                 MotionEvent.ACTION_UP -> {
                     main.removeCallbacks(longPress)
-                    if (!moved && !longPressed) {
+                    hideTarget()
+                    if (overTarget) {
+                        v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        quitApp()
+                    } else if (!moved && !longPressed) {
                         v.performClick()
                         onTap()
                     }
                 }
-                MotionEvent.ACTION_CANCEL -> main.removeCallbacks(longPress)
+                MotionEvent.ACTION_CANCEL -> {
+                    main.removeCallbacks(longPress)
+                    hideTarget()
+                }
             }
             return true
         }
@@ -463,5 +564,10 @@ class OverlayService : Service() {
         private const val KEEP_WARM_MS = 45_000L
         private const val WARM_AGAIN_AFTER_MS = 20_000L
         private const val ACCENT = 0xFFD97757.toInt()
+        private const val BUTTON_DP = 56
+        private const val QUIET_BUTTON_DP = 40
+        private const val QUIET_COLOR = 0xFF808080.toInt()
+        private const val QUIET_ALPHA = 0.35f
+        private const val TARGET_DP = 64
     }
 }
