@@ -4,12 +4,12 @@ import android.graphics.PointF
 import org.json.JSONException
 import org.json.JSONObject
 
-/** Ksztalty odpowiedzi w Kahoot, w kolejnosci z ekranu. */
-enum class Shape(val key: String, val emoji: String) {
-    TRIANGLE("triangle", "🔺"),
-    DIAMOND("diamond", "🔷"),
-    CIRCLE("circle", "🟡"),
-    SQUARE("square", "🟩"),
+/** Ksztalty odpowiedzi w Kahoot, w kolejnosci z ekranu; [glyph] w kolorze [color] to wersja bez emotek. */
+enum class Shape(val key: String, val emoji: String, val glyph: String, val color: Int) {
+    TRIANGLE("triangle", "🔺", "▲", 0xFFE21B3C.toInt()),
+    DIAMOND("diamond", "🔷", "◆", 0xFF1368CE.toInt()),
+    CIRCLE("circle", "🟡", "●", 0xFFFFA602.toInt()),
+    SQUARE("square", "🟩", "■", 0xFF26890C.toInt()),
 }
 
 /**

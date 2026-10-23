@@ -2,5 +2,5 @@
 <resources>
     <string name="app_name">Dymek</string>
     <string name="tap_service_label">Dymek: autoclicker</string>
-    <string name="tap_service_description">Klika odpowiedź, którą Dymek uznał za pewną, z losowym opóźnieniem ustawionym w aplikacji. Nie czyta zawartości ekranu.</string>
+    <string name="tap_service_description">Klika odpowiedź, którą Dymek uznał za pewną, z losowym opóźnieniem ustawionym w aplikacji. Żeby trafić dokładnie, szuka na ekranie przycisku z tekstem tej odpowiedzi; niczego nie zapisuje ani nie wysyła.</string>
 </resources>

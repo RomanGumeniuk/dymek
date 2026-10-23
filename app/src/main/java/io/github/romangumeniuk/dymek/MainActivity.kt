@@ -88,14 +88,19 @@ class MainActivity : Activity() {
 
         column.addView(label("Odpowiedzi"))
         column.addView(CheckBox(this).apply {
+            text = "Nowy wygląd dymka: ciemny, przezroczysty, bez emotek"
+            isChecked = settings.slickBubble
+            setOnCheckedChangeListener { _, checked -> settings.slickBubble = checked }
+        })
+        column.addView(CheckBox(this).apply {
             text = "Gdy AI nie jest pewne, sprawdza w internecie"
             isChecked = settings.searchWhenUnsure
             setOnCheckedChangeListener { _, checked -> settings.searchWhenUnsure = checked }
         })
         column.addView(note(
-            "Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej 🤷 z pewnością w procentach). " +
+            "Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej „Nie wiem” z pewnością w procentach). " +
                 "Bez internetu odpowiedź musi mieć 90% pewności, po wyszukaniu 70%; 🔍2 przy czasie to 2 wyszukiwania. " +
-                "W Kahoot zamiast tekstu pokazuje kształt: 🔺 🔷 🟡 🟩. Sprawdzanie w internecie dodaje kilka sekund; " +
+                "W Kahoot zamiast tekstu pokazuje kształt (▲ ◆ ● ■). Sprawdzanie w internecie dodaje kilka sekund; " +
                 "w Claude wyszukiwania są dodatkowo płatne, a w Gemini wliczają się w darmowe limity Google."
         ))
 
@@ -123,8 +128,10 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
         column.addView(note(
-            "Włącz tam „Dymek: autoclicker”. Jeśli przełącznik jest wyszarzony (Android 13 i nowsze), otwórz " +
-                "Ustawienia → Aplikacje → Dymek → ⋮ → „Zezwól na ustawienia z ograniczeniami” i spróbuj ponownie."
+            "Włącz tam „Dymek: autoclicker” (po aktualizacji z wersji 1.6 i starszych trzeba go włączyć jeszcze raz). " +
+                "Autoclicker szuka na ekranie przycisku z tekstem odpowiedzi, a w miejscu kliknięcia na chwilę pokazuje " +
+                "kółko. Jeśli przełącznik jest wyszarzony (Android 13 i nowsze), otwórz Ustawienia → Aplikacje → Dymek → ⋮ → " +
+                "„Zezwól na ustawienia z ograniczeniami” i spróbuj ponownie."
         ), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(20) })
 
         claudeKeyInput = addKeySection(

@@ -29,7 +29,13 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.util.DisplayMetrics
 import android.view.Display
 import android.view.Gravity
@@ -87,6 +93,7 @@ class OverlayService : Service() {
     private var target: TextView? = null
     private lateinit var targetParams: WindowManager.LayoutParams
     private var targetShown = false
+    private var tapMark: View? = null
     private var busy = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -158,6 +165,8 @@ class OverlayService : Service() {
         button = null
         hideBubble()
         hideTarget()
+        tapMark?.let { wm.removeView(it) }
+        tapMark = null
         worker.shutdownNow()
         warmer.shutdownNow()
         answerer?.close()
@@ -285,7 +294,7 @@ class OverlayService : Service() {
                 worker.execute {
                     val answer = try {
                         answerer?.solve(bitmap, search) {
-                            main.post { if (button != null) showBubble("Szukam w internecie…") }
+                            main.post { if (button != null) showBubble(if (settings.slickBubble) "🔍 Szukam…" else "Szukam w internecie…") }
                         } ?: Answer.error("Dymek nie jest gotowy.")
                     } catch (e: RuntimeException) {
                         Answer.error("Błąd: ${e.message}")
@@ -306,19 +315,17 @@ class OverlayService : Service() {
     /** Pewna odpowiedz klika autoclicker albo pokazuje dymek; niepewnej nie pokazujemy wcale. */
     private fun deliver(answer: Answer, seconds: String) {
         // lupa z liczba wyszukiwan: odpowiedz wymagala sprawdzenia w internecie, stad dluzszy czas
-        val time = if (answer.searched) "🔍${answer.searches} $seconds" else seconds
+        val meta = if (answer.searched) "🔍${answer.searches} $seconds" else seconds
         val tapper = TapService.instance
-        val tap = answer.tap
         when {
-            answer.error -> showBubble("${answer.text}  ·  $time")
+            answer.error -> showBubble(answer.text, meta)
+            answer.text.isEmpty() -> showBubble(unknownLabel(), meta)
             // pewnosc w procentach mowi, jak daleko bylo do progu
-            answer.text.isEmpty() -> showBubble("🤷  ·  $time")
-            !answer.sure -> showBubble("🤷 ${answer.confidence}%  ·  $time")
-            !settings.autoClick -> showBubble("${answer.label}  ·  $time")
-            tapper == null -> showBubble("${answer.label}  ·  $time\nWłącz „Dymek: autoclicker” w Ułatwieniach dostępu.")
-            tap == null -> showBubble("${answer.label}  ·  $time\nNie wiem, gdzie kliknąć.")
+            !answer.sure -> showBubble(unknownLabel(), "${answer.confidence}%  ·  $meta")
+            !settings.autoClick -> showBubble(answerLabel(answer), meta)
+            tapper == null -> showBubble(answerLabel(answer), "$meta\nWłącz „Dymek: autoclicker” w Ułatwieniach dostępu.")
             else -> {
-                autoClick(tapper, tap, answer.confirm, answer.label, time)
+                autoClick(tapper, answer, meta)
                 return
             }
         }
@@ -326,30 +333,89 @@ class OverlayService : Service() {
     }
 
     /** Klika po losowym opoznieniu, zeby czas odpowiedzi nie byl za kazdym razem taki sam. */
-    private fun autoClick(tapper: TapService, tap: PointF, confirm: PointF?, label: String, time: String) {
+    private fun autoClick(tapper: TapService, answer: Answer, meta: String) {
         hideBubble()
         val delay = (settings.clickDelaySeconds * 1000 * Random.nextDouble(0.5, 1.5)).toLong()
         main.postDelayed({
             val screen = screenSize()
+            // punkty od AI sa w ulamkach ekranu, a usluga klika w pikselach
+            fun pixels(p: PointF?) = p?.let { PointF(it.x * screen.x, it.y * screen.y) }
             passThrough(true)
-            tapper.tap(tap.x * screen.x, tap.y * screen.y) { tapped ->
+            tapper.clickOption(answer.text, pixels(answer.tap)) { at ->
+                showTapMark(at)
                 // button == null: dymek zostal wylaczony w trakcie klikania
-                if (tapped && confirm != null && button != null) {
+                if (at != null && answer.confirm != null && button != null) {
                     // np. Mentimeter: po wybraniu opcji trzeba jeszcze nacisnac "Wyslij"
                     main.postDelayed({
-                        tapper.tap(confirm.x * screen.x, confirm.y * screen.y) { afterClick(it, label, time) }
+                        tapper.clickSubmit(pixels(answer.confirm)) { sent ->
+                            showTapMark(sent)
+                            afterClick(sent != null, answer, meta)
+                        }
                     }, Random.nextLong(250, 600))
                 } else {
-                    afterClick(tapped, label, time)
+                    afterClick(at != null, answer, meta)
                 }
             }
         }, delay)
     }
 
-    private fun afterClick(tapped: Boolean, label: String, time: String) {
+    private fun afterClick(clicked: Boolean, answer: Answer, meta: String) {
         passThrough(false)
-        if (button != null) showBubble(if (tapped) "👆 $label  ·  $time" else "Nie udało się kliknąć: $label")
+        if (button != null) {
+            val label = answerLabel(answer)
+            val text = when {
+                !clicked -> SpannableStringBuilder("Nie udało się kliknąć: ").append(label)
+                settings.slickBubble -> SpannableStringBuilder("✓ ").append(label)
+                else -> SpannableStringBuilder("👆 ").append(label)
+            }
+            showBubble(text, meta)
+        }
         busy = false
+    }
+
+    /** Odpowiedz w dymku: w Kahoot sam ksztalt, w nowym stylu jako kolorowy znak zamiast emotki. */
+    private fun answerLabel(answer: Answer): CharSequence {
+        val shape = answer.shape ?: return answer.text
+        if (!settings.slickBubble) return shape.emoji
+        return SpannableString(shape.glyph).apply {
+            setSpan(ForegroundColorSpan(shape.color), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    private fun unknownLabel() = if (settings.slickBubble) "Nie wiem" else "🤷"
+
+    /** Krotki pierscien w miejscu klikniecia autoclickera, zeby bylo widac, gdzie trafil. */
+    private fun showTapMark(at: PointF?) {
+        if (at == null || button == null) return
+        tapMark?.let { wm.removeView(it) }
+        val size = dp(TAP_MARK_DP)
+        val view = View(uiContext).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0x33FFFFFF)
+                setStroke(dp(2), if (settings.slickBubble) 0xFFFFFFFF.toInt() else ACCENT)
+            }
+        }
+        val params = overlayParams(size, size).apply {
+            x = (at.x - size / 2f).toInt()
+            y = (at.y - size / 2f).toInt()
+            // wspolrzedne calego ekranu, jak przy kliknieciu; dotyk przechodzi dalej
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            alpha = 0.8f
+            if (Build.VERSION.SDK_INT >= 30) {
+                fitInsetsTypes = 0
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+        }
+        wm.addView(view, params)
+        tapMark = view
+        main.postDelayed({
+            if (tapMark === view) {
+                wm.removeView(view)
+                tapMark = null
+            }
+        }, TAP_MARK_MS)
     }
 
     /** Na czas klikniecia przycisk znika i przepuszcza dotyk do aplikacji pod spodem. */
@@ -412,21 +478,46 @@ class OverlayService : Service() {
         if (bubbleShown) positionBubble()
     }
 
-    private fun showBubble(text: String) {
+    /**
+     * Dymek z odpowiedzia [main] i dopiskiem [meta] (czas, lupa). Nowy styl: ciemny i polprzezroczysty,
+     * dopisek mniejszy i przygaszony; klasyczny: bialy z pomaranczowa ramka.
+     */
+    private fun showBubble(main: CharSequence, meta: String? = null) {
         val view = bubble ?: TextView(uiContext).apply {
-            textSize = 16f
-            setTextColor(0xFF1F1F1F.toInt())
-            setPadding(dp(14), dp(10), dp(14), dp(10))
             maxLines = 10
             ellipsize = TextUtils.TruncateAt.END
-            background = GradientDrawable().apply {
+            // stukniecie zamyka dymek
+            setOnClickListener { hideBubble() }
+        }.also { bubble = it }
+        val slick = settings.slickBubble
+        val text = SpannableStringBuilder(main)
+        if (slick) {
+            view.textSize = 15f
+            view.setTextColor(0xFFFFFFFF.toInt())
+            view.setPadding(dp(12), dp(7), dp(12), dp(7))
+            view.background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(0xB3121212.toInt())
+                setStroke(1, 0x33FFFFFF)
+            }
+            text.setSpan(StyleSpan(Typeface.BOLD), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (meta != null) {
+                val from = text.length
+                text.append("   ").append(meta)
+                text.setSpan(RelativeSizeSpan(0.8f), from, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text.setSpan(ForegroundColorSpan(0x99FFFFFF.toInt()), from, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        } else {
+            view.textSize = 16f
+            view.setTextColor(0xFF1F1F1F.toInt())
+            view.setPadding(dp(14), dp(10), dp(14), dp(10))
+            view.background = GradientDrawable().apply {
                 cornerRadius = dp(16).toFloat()
                 setColor(0xF7FFFFFF.toInt())
                 setStroke(dp(2), ACCENT)
             }
-            // stukniecie zamyka dymek
-            setOnClickListener { hideBubble() }
-        }.also { bubble = it }
+            if (meta != null) text.append("  ·  ").append(meta)
+        }
         view.maxWidth = (screenSize().x * 0.85f).toInt()
         view.text = text
         if (!bubbleShown) {
@@ -656,5 +747,7 @@ class OverlayService : Service() {
         private const val TARGET_ACTIVE_DP = 80
         // z tej odleglosci od srodka ekranu przycisk przyciaga sie do krzyzyka
         private const val TARGET_PULL_DP = 72
+        private const val TAP_MARK_DP = 28
+        private const val TAP_MARK_MS = 450L
     }
 }

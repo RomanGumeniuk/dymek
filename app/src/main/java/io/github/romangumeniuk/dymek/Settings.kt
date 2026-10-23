@@ -41,6 +41,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_CENTER_QUITS, true)
         set(value) = prefs.edit().putBoolean(KEY_CENTER_QUITS, value).apply()
 
+    /** Ciemny, polprzezroczysty dymek bez emotek (poza lupa) zamiast bialego z pomaranczowa ramka. */
+    var slickBubble: Boolean
+        get() = prefs.getBoolean(KEY_SLICK, true)
+        set(value) = prefs.edit().putBoolean(KEY_SLICK, value).apply()
+
     /** Gdy model nie jest pewien, druga proba z wyszukiwaniem w internecie. */
     var searchWhenUnsure: Boolean
         get() = prefs.getBoolean(KEY_SEARCH, true)
@@ -73,6 +78,7 @@ class Settings(context: Context) {
         private const val KEY_MODEL = "model"
         private const val KEY_QUIET = "quiet_button"
         private const val KEY_CENTER_QUITS = "center_quits"
+        private const val KEY_SLICK = "slick_bubble"
         private const val KEY_SEARCH = "search_when_unsure"
         private const val KEY_AUTO_CLICK = "auto_click"
         private const val KEY_CLICK_DELAY = "click_delay"

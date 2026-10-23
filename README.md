@@ -39,8 +39,11 @@ W ustawieniach są dwie opcje przycisku (działają od razu, także przy włącz
 - AI podaje pewność w procentach. Bez internetu odpowiedź musi mieć co najmniej 90%, inaczej dymek pyta drugi raz,
   a model musi najpierw wyszukać odpowiedź w internecie (Google Search w Gemini, web search w Claude).
   Po wyszukaniu wystarcza 70%. Można to wyłączyć; w Claude wyszukiwania są dodatkowo płatne.
-- Niepewnej odpowiedzi dymek nie pokazuje ani nie klika: zamiast niej `🤷` z pewnością, np. `🤷 55%`.
-- W Kahoot dymek pokazuje sam kształt poprawnej odpowiedzi: 🔺 🔷 🟡 🟩.
+- Niepewnej odpowiedzi dymek nie pokazuje ani nie klika: zamiast niej „Nie wiem” z pewnością, np. `Nie wiem 55%`
+  (w klasycznym wyglądzie `🤷 55%`).
+- W Kahoot dymek pokazuje sam kształt poprawnej odpowiedzi: kolorowe ▲ ◆ ● ■ (w klasycznym wyglądzie 🔺 🔷 🟡 🟩).
+- **Nowy wygląd dymka** (domyślnie włączony): ciemny, półprzezroczysty, bez emotek poza 🔍; można wrócić do
+  klasycznego, białego z pomarańczową ramką.
 - `🔍2` przy czasie w dymku znaczy, że odpowiedź wymagała sprawdzenia w internecie, a model wyszukał 2 razy
   (`🔍0`: druga próba była, ale model nie szukał). W trakcie wyszukiwania dymek pokazuje „Szukam w internecie…”.
 - Gdy Kahoot pokazuje na telefonie same kształty bez treści pytania, AI nie ma czego przeczytać i nie zgaduje.
@@ -48,13 +51,16 @@ W ustawieniach są dwie opcje przycisku (działają od razu, także przy włącz
 ## Autoclicker
 
 Opcja **Sam klika pewną odpowiedź** stuka w poprawną opcję za Ciebie, a w Mentimeter także w „Wyślij”.
+Szuka na ekranie przycisku z tekstem odpowiedzi (dokładniej niż punkt odczytany przez AI ze zrzutu, który zostaje
+jako zapas) i na chwilę pokazuje kółko w miejscu kliknięcia.
 
 - Wymaga włączenia usługi **Dymek: autoclicker** w *Ustawienia → Ułatwienia dostępu*. Na Androidzie 13+
   przy APK spoza sklepu trzeba najpierw w *Ustawienia → Aplikacje → Dymek → ⋮* wybrać
   „Zezwól na ustawienia z ograniczeniami”.
 - **Opóźnienie kliknięcia** (domyślnie 1 s) jest za każdym razem losowe: od połowy do półtora podanej
   wartości, liczone od chwili, gdy przyjdzie odpowiedź.
-- Usługa tylko wykonuje stuknięcia; nie czyta zawartości ekranu.
+- Usługa odczytuje przyciski aplikacji pod spodem tylko w chwili klikania; niczego nie zapisuje ani nie wysyła.
+  Po aktualizacji z wersji 1.6 i starszych trzeba ją włączyć jeszcze raz.
 
 Modele, od najszybszego:
 
