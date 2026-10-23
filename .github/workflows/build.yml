@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Utwórz wydanie v<versionName> z tego commita"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,3 +63,12 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dymek.apk --title "Dymek $GITHUB_REF_NAME" --generate-notes
           fi
+
+      # reczne uruchomienie z zaznaczonym "release": tag z wersji aplikacji na tym commicie
+      - name: Wydanie z recznego uruchomienia
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          gh release create "v$VERSION" dymek.apk --target "$GITHUB_SHA" --title "Dymek v$VERSION" --generate-notes
