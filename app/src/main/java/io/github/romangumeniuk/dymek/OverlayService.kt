@@ -85,6 +85,7 @@ class OverlayService : Service() {
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private var bubbleShown = false
     private var target: TextView? = null
+    private lateinit var targetParams: WindowManager.LayoutParams
     private var targetShown = false
     private var busy = false
 
@@ -301,7 +302,9 @@ class OverlayService : Service() {
     }
 
     /** Pewna odpowiedz klika autoclicker albo pokazuje dymek; niepewnej nie pokazujemy wcale. */
-    private fun deliver(answer: Answer, time: String) {
+    private fun deliver(answer: Answer, seconds: String) {
+        // lupa: odpowiedz wymagala sprawdzenia w internecie, stad dluzszy czas
+        val time = if (answer.searched) "🔍 $seconds" else seconds
         val tapper = TapService.instance
         val tap = answer.tap
         when {
@@ -380,7 +383,7 @@ class OverlayService : Service() {
         val view = button ?: return
         val quiet = settings.quietButton
         val size = dp(if (quiet) QUIET_BUTTON_DP else BUTTON_DP)
-        view.textSize = if (quiet) 18f else 26f
+        view.textSize = if (quiet) 14f else 20f
         view.alpha = if (quiet) QUIET_ALPHA else 1f
         view.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -459,44 +462,55 @@ class OverlayService : Service() {
         }
     }
 
-    /** Kolko z krzyzykiem na srodku ekranu, widoczne tylko w czasie przeciagania przycisku. */
+    /** Kolko z krzyzykiem na srodku ekranu, widoczne tylko w czasie przeciagania przycisku (jak w Messengerze). */
     private fun showTarget() {
         if (targetShown) return
         val view = target ?: TextView(uiContext).apply {
-            text = "✕"
-            textSize = 24f
             gravity = Gravity.CENTER
             setTextColor(0xFFFFFFFF.toInt())
             contentDescription = "Upuść tu przycisk, żeby zamknąć Dymek"
         }.also { target = it }
-        highlightTarget(false)
-        val size = dp(TARGET_DP)
-        val params = overlayParams(size, size).apply {
-            gravity = Gravity.CENTER
+        // te same wspolrzedne okna co przycisk, wiec srodek ekranu liczy sie dla obu tak samo
+        targetParams = overlayParams(0, 0).apply {
             // dotyk idzie dalej, do przeciaganego przycisku
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
-        wm.addView(view, params)
+        highlightTarget(false)
+        wm.addView(view, targetParams)
         targetShown = true
     }
 
+    /** Gdy przycisk jest przyciagniety, kolko robi sie wiekszym czerwonym pierscieniem wokol niego. */
     private fun highlightTarget(on: Boolean) {
-        target?.background = GradientDrawable().apply {
+        val view = target ?: return
+        val size = dp(if (on) TARGET_ACTIVE_DP else TARGET_DP)
+        val screen = screenSize()
+        targetParams.width = size
+        targetParams.height = size
+        targetParams.x = (screen.x - size) / 2
+        targetParams.y = (screen.y - size) / 2
+        view.text = if (on) "" else "✕"
+        view.textSize = 22f
+        view.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(if (on) 0xE0D93025.toInt() else 0x99000000.toInt())
-            setStroke(dp(2), 0xFFFFFFFF.toInt())
+            if (on) {
+                setColor(0x55D93025)
+                setStroke(dp(4), 0xFFD93025.toInt())
+            } else {
+                setColor(0x99000000.toInt())
+                setStroke(dp(2), 0xFFFFFFFF.toInt())
+            }
         }
+        if (targetShown) wm.updateViewLayout(view, targetParams)
     }
 
-    /** Czy palec jest nad kolkiem na srodku ekranu (z zapasem, zeby latwo trafic). */
-    private fun isOverTarget(rawX: Float, rawY: Float): Boolean {
-        val view = target ?: return false
-        if (!targetShown || view.width == 0) return false
-        val loc = IntArray(2)
-        view.getLocationOnScreen(loc)
-        val cx = loc[0] + view.width / 2f
-        val cy = loc[1] + view.height / 2f
-        return hypot(rawX - cx, rawY - cy) < view.width
+    /** Czy przycisk w punkcie (x, y) okna ma srodek blisko kolka na srodku ekranu. */
+    private fun nearTarget(x: Int, y: Int): Boolean {
+        if (!targetShown) return false
+        val screen = screenSize()
+        val cx = x + buttonParams.width / 2f
+        val cy = y + buttonParams.height / 2f
+        return hypot(cx - screen.x / 2f, cy - screen.y / 2f) < dp(TARGET_PULL_DP)
     }
 
     private fun hideTarget() {
@@ -555,16 +569,25 @@ class OverlayService : Service() {
                         if (settings.centerQuits) showTarget()
                     }
                     if (moved) {
-                        buttonParams.x = startX + dx.toInt()
-                        buttonParams.y = startY + dy.toInt()
-                        wm.updateViewLayout(v, buttonParams)
-                        if (bubbleShown) positionBubble()
-                        val over = isOverTarget(e.rawX, e.rawY)
+                        val x = startX + dx.toInt()
+                        val y = startY + dy.toInt()
+                        val over = nearTarget(x, y)
                         if (over != overTarget) {
                             overTarget = over
                             highlightTarget(over)
                             if (over) v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                         }
+                        if (over) {
+                            // jak w Messengerze: blisko krzyzyka przycisk sam do niego przeskakuje
+                            val screen = screenSize()
+                            buttonParams.x = (screen.x - buttonParams.width) / 2
+                            buttonParams.y = (screen.y - buttonParams.height) / 2
+                        } else {
+                            buttonParams.x = x
+                            buttonParams.y = y
+                        }
+                        wm.updateViewLayout(v, buttonParams)
+                        if (bubbleShown) positionBubble()
                     }
                 }
                 MotionEvent.ACTION_UP -> {
@@ -621,10 +644,13 @@ class OverlayService : Service() {
         private const val KEEP_WARM_MS = 45_000L
         private const val WARM_AGAIN_AFTER_MS = 20_000L
         private const val ACCENT = 0xFFD97757.toInt()
-        private const val BUTTON_DP = 56
-        private const val QUIET_BUTTON_DP = 40
+        private const val BUTTON_DP = 44
+        private const val QUIET_BUTTON_DP = 32
         private const val QUIET_COLOR = 0xFF808080.toInt()
         private const val QUIET_ALPHA = 0.35f
         private const val TARGET_DP = 64
+        private const val TARGET_ACTIVE_DP = 80
+        // z tej odleglosci od srodka ekranu przycisk przyciaga sie do krzyzyka
+        private const val TARGET_PULL_DP = 72
     }
 }

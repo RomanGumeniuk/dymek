@@ -23,7 +23,7 @@ interface Answerer : AutoCloseable {
         val first = ask(image, search = false, guess = "")
         // pusta odpowiedz to brak pytania na ekranie, wtedy nie ma czego szukac
         if (first.error || first.sure || first.text.isEmpty() || !searchWhenUnsure) return first
-        return ask(image, search = true, guess = first.text)
+        return ask(image, search = true, guess = first.text).copy(searched = true)
     }
 
     companion object {

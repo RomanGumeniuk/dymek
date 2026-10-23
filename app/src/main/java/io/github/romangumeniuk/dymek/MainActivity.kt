@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var modelGroup: RadioGroup
     private lateinit var delayInput: EditText
     private lateinit var tapStatus: TextView
+    private lateinit var testResult: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -149,6 +150,18 @@ class MainActivity : Activity() {
             textSize = 12f
         })
 
+        column.addView(label("Test"), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(20) })
+        column.addView(note(
+            "Sprawdza wybrany model na wzorcowym pytaniu z Kahoot: czas odpowiedzi, poprawność i trafienie " +
+                "kliknięcia, raz bez wyszukiwania i raz z wyszukiwaniem w internecie."
+        ))
+        column.addView(Button(this).apply {
+            text = "Testuj wybrany model"
+            setOnClickListener { runSpeedTest(this) }
+        })
+        testResult = TextView(this)
+        column.addView(testResult)
+
         column.addView(Button(this).apply {
             text = "Włącz dymek"
             setOnClickListener { start() }
@@ -226,18 +239,36 @@ class MainActivity : Activity() {
         delayInput.setText(formatSeconds(settings.clickDelaySeconds))
     }
 
+    /** Komunikat, gdy brakuje klucza do wybranego modelu, albo null. */
+    private fun missingKey(): String? = when (settings.model.provider) {
+        Provider.CLAUDE -> if (settings.claudeKey.startsWith("sk-ant-")) null else
+            "Wklej klucz API Claude (zaczyna się od sk-ant-) albo wybierz darmowy model Gemini."
+        Provider.GEMINI -> if (settings.geminiKey.isNotEmpty()) null else
+            "Wklej darmowy klucz Gemini z Google AI Studio."
+    }
+
+    private fun runSpeedTest(button: Button) {
+        saveForm()
+        missingKey()?.let { toast(it); return }
+        button.isEnabled = false
+        testResult.text = "Testuję ${settings.model.label}…"
+        Thread {
+            val result = try {
+                SpeedTest.run(settings)
+            } catch (e: RuntimeException) {
+                "Błąd testu: ${e.message}"
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                testResult.text = result
+                button.isEnabled = true
+            }
+        }.start()
+    }
+
     private fun start() {
         saveForm()
-        when (settings.model.provider) {
-            Provider.CLAUDE -> if (!settings.claudeKey.startsWith("sk-ant-")) {
-                toast("Wklej klucz API Claude (zaczyna się od sk-ant-) albo wybierz darmowy model Gemini.")
-                return
-            }
-            Provider.GEMINI -> if (settings.geminiKey.isEmpty()) {
-                toast("Wklej darmowy klucz Gemini z Google AI Studio.")
-                return
-            }
-        }
+        missingKey()?.let { toast(it); return }
         if (!SystemSettings.canDrawOverlays(this)) {
             toast("Zezwól Dymkowi na wyświetlanie nad innymi aplikacjami, potem wróć i stuknij jeszcze raz.")
             startActivity(

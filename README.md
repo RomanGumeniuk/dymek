@@ -25,7 +25,7 @@ albo sama ją klika. Do wyboru płatny **Claude** albo darmowy **Gemini**.
 | Stuknięcie przycisku `?` | zrzut ekranu i pytanie do AI |
 | Stuknięcie dymka | zamyka dymek |
 | Przeciągnięcie | przesuwa przycisk |
-| Przeciągnięcie na środek ekranu (na `✕`) | zamyka całą aplikację, także z listy ostatnich |
+| Przeciągnięcie na środek ekranu (na `✕`) | jak w Messengerze: przycisk przyciąga się do krzyżyka, puszczenie zamyka całą aplikację, także z listy ostatnich |
 | Przytrzymanie | wyłącza Dymek |
 
 W ustawieniach są dwie opcje przycisku (działają od razu, także przy włączonym dymku):
@@ -40,6 +40,7 @@ W ustawieniach są dwie opcje przycisku (działają od razu, także przy włącz
 - Gdy AI nie jest pewne, pyta drugi raz z wyszukiwaniem w internecie (Google Search w Gemini,
   web search w Claude). Można to wyłączyć; w Claude wyszukiwania są dodatkowo płatne.
 - W Kahoot dymek pokazuje sam kształt poprawnej odpowiedzi: 🔺 🔷 🟡 🟩.
+- `🔍` przy czasie w dymku znaczy, że odpowiedź wymagała sprawdzenia w internecie.
 - Gdy Kahoot pokazuje na telefonie same kształty bez treści pytania, AI nie ma czego przeczytać i nie zgaduje.
 
 ## Autoclicker
@@ -64,6 +65,8 @@ Modele, od najszybszego:
 | Claude Opus 5.5 | płatny | najdokładniejszy, wolniejszy |
 
 Pod dymkiem widać czas od stuknięcia do odpowiedzi, więc łatwo porównać modele.
+Przycisk **Testuj wybrany model** w aplikacji sprawdza model na wzorcowym pytaniu z Kahoot: czas, poprawność
+i trafienie kliknięcia, raz bez wyszukiwania i raz z wyszukiwaniem.
 
 ## Szybkość
 

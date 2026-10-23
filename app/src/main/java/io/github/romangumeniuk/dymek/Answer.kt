@@ -14,15 +14,16 @@ enum class Shape(val key: String, val emoji: String) {
 
 /**
  * Odpowiedz modelu: tekst, pewnosc, ksztalt z Kahoot i punkty do klikniecia (ulamek szerokosci
- * i wysokosci ekranu) albo komunikat bledu do pokazania w dymku.
+ * i wysokosci ekranu) albo komunikat bledu do pokazania w dymku. [searched]: z drugiej proby, z internetu.
  */
-class Answer(
+data class Answer(
     val text: String,
     val sure: Boolean = false,
     val shape: Shape? = null,
     val tap: PointF? = null,
     val confirm: PointF? = null,
     val error: Boolean = false,
+    val searched: Boolean = false,
 ) {
     /** Tresc dymka: przy Kahoot sam ksztalt, ktory widac jednym spojrzeniem. */
     val label: String get() = shape?.emoji ?: text
