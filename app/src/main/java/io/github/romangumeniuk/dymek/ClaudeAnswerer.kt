@@ -1,6 +1,5 @@
 package io.github.romangumeniuk.dymek
 
-import android.graphics.Bitmap
 import com.anthropic.client.AnthropicClient
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.anthropic.core.JsonValue
@@ -16,6 +15,8 @@ import com.anthropic.models.messages.ImageBlockParam
 import com.anthropic.models.messages.MessageCreateParams
 import com.anthropic.models.messages.OutputConfig
 import com.anthropic.models.messages.TextBlockParam
+import com.anthropic.models.messages.WebSearchTool20250305
+import com.anthropic.models.messages.WebSearchTool20260209
 
 /** Claude przez oficjalne SDK Anthropic (platne z konta Claude). */
 class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer {
@@ -23,11 +24,17 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
         .apiKey(apiKey)
         .build()
 
-    override fun answer(screen: Bitmap): String {
+    override fun ask(image: String, search: Boolean, guess: String): Answer {
         val builder = MessageCreateParams.builder()
             .model(model.id)
-            // Opus zawsze mysli, wiec potrzebuje miejsca; pozostale odpowiadaja od razu
-            .maxTokens(if (model == ModelChoice.OPUS) 4000L else 512L)
+            // Opus zawsze mysli, a wyszukiwanie doklada kilka krokow, wiec oba potrzebuja miejsca
+            .maxTokens(
+                when {
+                    model == ModelChoice.OPUS -> 8000L
+                    search -> 2048L
+                    else -> 512L
+                }
+            )
             .system(Answerer.SYSTEM_PROMPT)
             // niski wysilek = szybka odpowiedz, a w quizie liczy sie czas
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
@@ -38,14 +45,26 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
                             .source(
                                 Base64ImageSource.builder()
                                     .mediaType(Base64ImageSource.MediaType.IMAGE_JPEG)
-                                    .data(Answerer.toJpegBase64(screen))
+                                    .data(image)
                                     .build()
                             )
                             .build()
                     ),
-                    ContentBlockParam.ofText(TextBlockParam.builder().text(Answerer.USER_PROMPT).build()),
+                    ContentBlockParam.ofText(
+                        TextBlockParam.builder()
+                            .text(if (search) Answerer.searchPrompt(guess) else Answerer.USER_PROMPT)
+                            .build()
+                    ),
                 )
             )
+        if (search) {
+            // Haiku zna tylko podstawowa wyszukiwarke, Sonnet i Opus nowsza, z filtrowaniem wynikow
+            if (model == ModelChoice.HAIKU) {
+                builder.addTool(WebSearchTool20250305.builder().maxUses(2L).build())
+            } else {
+                builder.addTool(WebSearchTool20260209.builder().maxUses(2L).build())
+            }
+        }
         when (model) {
             // bez myslenia odpowiedz przychodzi najszybciej
             ModelChoice.HAIKU ->
@@ -62,27 +81,29 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
         val response = try {
             client.messages().create(builder.build())
         } catch (e: UnauthorizedException) {
-            return "Zły klucz API Claude. Sprawdź go w aplikacji Dymek."
+            return Answer.error("Zły klucz API Claude. Sprawdź go w aplikacji Dymek.")
         } catch (e: PermissionDeniedException) {
-            return "Klucz nie ma dostępu do tego modelu."
+            return Answer.error("Klucz nie ma dostępu do tego modelu.")
         } catch (e: RateLimitException) {
-            return "Za dużo zapytań, spróbuj za chwilę."
+            return Answer.error("Za dużo zapytań, spróbuj za chwilę.")
         } catch (e: BadRequestException) {
-            return "Błąd zapytania: ${e.message?.take(160)}"
+            return Answer.error("Błąd zapytania: ${e.message?.take(160)}")
         } catch (e: AnthropicServiceException) {
-            return "Błąd API (${e.statusCode()}). Spróbuj ponownie."
+            return Answer.error("Błąd API (${e.statusCode()}). Spróbuj ponownie.")
         } catch (e: AnthropicIoException) {
-            return "Brak połączenia z internetem."
+            return Answer.error("Brak połączenia z internetem.")
         }
 
-        if (response.stopReason().map { it.toString() }.orElse("") == "refusal") {
-            return "Claude odmówił odpowiedzi na to pytanie."
+        when (response.stopReason().map { it.toString() }.orElse("")) {
+            "refusal" -> return Answer.error("Claude odmówił odpowiedzi na to pytanie.")
+            // wyszukiwanie nie skonczylo sie w jednej turze: to nie jest pewna odpowiedz
+            "pause_turn" -> return Answer(guess)
         }
+        // przy wyszukiwaniu odpowiedz bywa pocieta na kilka blokow z cytatami, wiec laczymy bez odstepow
         val text = response.content()
             .mapNotNull { block -> block.text().map { it.text() }.orElse(null) }
-            .joinToString("\n")
-            .trim()
-        return text.ifEmpty { "Brak odpowiedzi." }
+            .joinToString("")
+        return Answer.parse(text)
     }
 
     override fun warmUp() {

@@ -1,8 +1,8 @@
 # Dymek
 
-Aplikacja na Androida: pływający przycisk nad innymi aplikacjami. Stukasz go, telefon robi zrzut ekranu,
-AI czyta pytanie (np. z quizu) i pokazuje krótką odpowiedź w dymku obok przycisku.
-Do wyboru płatny **Claude** albo darmowy **Gemini**.
+Aplikacja na Androida: pływający przycisk nad innymi aplikacjami. Stukasz go w quizie (Kahoot, Mentimeter,
+Quizizz i podobne), telefon robi zrzut ekranu, AI czyta pytanie i pokazuje odpowiedź w dymku obok przycisku
+albo sama ją klika. Do wyboru płatny **Claude** albo darmowy **Gemini**.
 
 ## Instalacja
 
@@ -34,6 +34,25 @@ W ustawieniach są dwie opcje przycisku (działają od razu, także przy włącz
 - **Przeciągnięcie na środek ekranu zamyka całą aplikację:** domyślnie włączone. W czasie przeciągania
   na środku ekranu pojawia się kółko z `✕`; po upuszczeniu na nim dymek się wyłącza, a aplikacja zamyka.
 
+## Odpowiedzi
+
+- AI odpowiada tylko, gdy jest pewne. Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej `🤷`).
+- Gdy AI nie jest pewne, pyta drugi raz z wyszukiwaniem w internecie (Google Search w Gemini,
+  web search w Claude). Można to wyłączyć; w Claude wyszukiwania są dodatkowo płatne.
+- W Kahoot dymek pokazuje sam kształt poprawnej odpowiedzi: 🔺 🔷 🟡 🟩.
+- Gdy Kahoot pokazuje na telefonie same kształty bez treści pytania, AI nie ma czego przeczytać i nie zgaduje.
+
+## Autoclicker
+
+Opcja **Sam klika pewną odpowiedź** stuka w poprawną opcję za Ciebie, a w Mentimeter także w „Wyślij”.
+
+- Wymaga włączenia usługi **Dymek: autoclicker** w *Ustawienia → Ułatwienia dostępu*. Na Androidzie 13+
+  przy APK spoza sklepu trzeba najpierw w *Ustawienia → Aplikacje → Dymek → ⋮* wybrać
+  „Zezwól na ustawienia z ograniczeniami”.
+- **Opóźnienie kliknięcia** (domyślnie 1 s) jest za każdym razem losowe: od połowy do półtora podanej
+  wartości, liczone od chwili, gdy przyjdzie odpowiedź.
+- Usługa tylko wykonuje stuknięcia; nie czyta zawartości ekranu.
+
 Modele, od najszybszego:
 
 | Model | Koszt | Uwagi |
@@ -55,13 +74,16 @@ Pod dymkiem widać czas od stuknięcia do odpowiedzi, więc łatwo porównać mo
 
 ## Jak to działa
 
-- `MainActivity` zapisuje klucz i model w prywatnych ustawieniach aplikacji (bez kopii zapasowej w chmurze)
+- `MainActivity` zapisuje klucz, model i opcje w prywatnych ustawieniach aplikacji (bez kopii zapasowej w chmurze)
   i prosi o zgody.
 - `OverlayService` to usługa pierwszoplanowa z `MediaProjection`: trzyma ostatnią klatkę ekranu, a po stuknięciu
   chowa przycisk, bierze klatkę, zmniejsza ją do 1200 px i wysyła jako JPEG.
 - `ClaudeAnswerer` woła Messages API przez oficjalne SDK `com.anthropic:anthropic-java`
   (klucz idzie tylko do `api.anthropic.com`).
 - `GeminiAnswerer` woła REST `generateContent` (klucz w nagłówku, tylko do `generativelanguage.googleapis.com`).
+- Model odpowiada jednym wierszem JSON (`Answer`): odpowiedź, kształt z Kahoot, punkt do kliknięcia w skali
+  0–1000, ewentualny przycisk zatwierdzenia i pewność.
+- `TapService` to usługa ułatwień dostępu, która klika przez `dispatchGesture`.
 
 Ograniczenia: aplikacje blokujące zrzuty ekranu (bankowe, niektóre z DRM) dają czarny obraz.
 Na iOS taka aplikacja nie jest możliwa (system nie pozwala na nakładki i zrzuty innych aplikacji).

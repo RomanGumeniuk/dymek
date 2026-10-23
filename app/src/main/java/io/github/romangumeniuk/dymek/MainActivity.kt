@@ -24,6 +24,7 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Locale
 
 /** Ekran ustawien: klucz API, model, wyglad i wlaczanie plywajacego przycisku. */
 class MainActivity : Activity() {
@@ -31,6 +32,8 @@ class MainActivity : Activity() {
     private lateinit var claudeKeyInput: EditText
     private lateinit var geminiKeyInput: EditText
     private lateinit var modelGroup: RadioGroup
+    private lateinit var delayInput: EditText
+    private lateinit var tapStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,9 +54,9 @@ class MainActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         column.addView(TextView(this).apply {
-            text = "Pływający przycisk nad innymi aplikacjami. Stuknij go, a AI (Claude albo darmowy Gemini) " +
-                "przeczyta pytanie z ekranu " +
-                "i pokaże krótką odpowiedź w dymku. Przytrzymaj przycisk, żeby go wyłączyć, " +
+            text = "Pływający przycisk nad innymi aplikacjami. Stuknij go w quizie (Kahoot, Mentimeter, Quizizz…), " +
+                "a AI (Claude albo darmowy Gemini) przeczyta pytanie z ekranu i pokaże odpowiedź w dymku " +
+                "albo sama ją kliknie. Przytrzymaj przycisk, żeby go wyłączyć, " +
                 "albo przeciągnij go na środek ekranu, żeby zamknąć całą aplikację."
             setPadding(0, dp(8), 0, dp(20))
         })
@@ -81,6 +84,46 @@ class MainActivity : Activity() {
             isChecked = settings.centerQuits
             setOnCheckedChangeListener { _, checked -> settings.centerQuits = checked }
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(20) })
+
+        column.addView(label("Odpowiedzi"))
+        column.addView(CheckBox(this).apply {
+            text = "Gdy AI nie jest pewne, sprawdza w internecie"
+            isChecked = settings.searchWhenUnsure
+            setOnCheckedChangeListener { _, checked -> settings.searchWhenUnsure = checked }
+        })
+        column.addView(note(
+            "Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej 🤷). W Kahoot zamiast tekstu " +
+                "pokazuje kształt: 🔺 🔷 🟡 🟩. Sprawdzanie w internecie dodaje kilka sekund; w Claude wyszukiwania " +
+                "są dodatkowo płatne, a w Gemini wliczają się w darmowe limity Google."
+        ))
+
+        column.addView(label("Autoclicker"))
+        column.addView(CheckBox(this).apply {
+            text = "Sam klika pewną odpowiedź"
+            isChecked = settings.autoClick
+            setOnCheckedChangeListener { _, checked -> settings.autoClick = checked }
+        })
+        column.addView(TextView(this).apply { text = "Opóźnienie kliknięcia (sekundy)" })
+        delayInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setSingleLine()
+            setText(formatSeconds(settings.clickDelaySeconds))
+        }
+        column.addView(delayInput, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        column.addView(note(
+            "Za każdym razem losowe: od połowy do półtora podanej wartości (przy 1 s od 0,5 do 1,5 s), liczone " +
+                "od chwili, gdy przyjdzie odpowiedź."
+        ))
+        tapStatus = TextView(this).apply { setPadding(0, dp(8), 0, 0) }
+        column.addView(tapStatus)
+        column.addView(Button(this).apply {
+            text = "Otwórz ułatwienia dostępu"
+            setOnClickListener { startActivity(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
+        column.addView(note(
+            "Włącz tam „Dymek: autoclicker”. Jeśli przełącznik jest wyszarzony (Android 13 i nowsze), otwórz " +
+                "Ustawienia → Aplikacje → Dymek → ⋮ → „Zezwól na ustawienia z ograniczeniami” i spróbuj ponownie."
+        ), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(20) })
 
         claudeKeyInput = addKeySection(
             column,
@@ -163,11 +206,24 @@ class MainActivity : Activity() {
         settings.geminiKey = geminiKeyInput.text.toString()
         val index = modelGroup.checkedRadioButtonId - 1
         ModelChoice.entries.getOrNull(index)?.let { settings.model = it }
+        // przecinek albo kropka; puste lub bledne pole zostawia poprzednia wartosc
+        delayInput.text.toString().replace(',', '.').toFloatOrNull()?.let { settings.clickDelaySeconds = it }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // wraca tu z ustawien ulatwien dostepu, wiec stan uslugi mogl sie zmienic
+        tapStatus.text = if (TapService.instance != null) {
+            "Usługa autoclickera: włączona ✓"
+        } else {
+            "Usługa autoclickera: wyłączona"
+        }
     }
 
     override fun onPause() {
         super.onPause()
         saveForm()
+        delayInput.setText(formatSeconds(settings.clickDelaySeconds))
     }
 
     private fun start() {
@@ -237,6 +293,13 @@ class MainActivity : Activity() {
         this.text = text
         setTypeface(typeface, Typeface.BOLD)
     }
+
+    private fun note(text: String) = TextView(this).apply {
+        this.text = text
+        textSize = 12f
+    }
+
+    private fun formatSeconds(seconds: Float) = String.format(Locale("pl"), "%.1f", seconds)
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 

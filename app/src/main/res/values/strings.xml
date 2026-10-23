@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Dymek</string>
+    <string name="tap_service_label">Dymek: autoclicker</string>
+    <string name="tap_service_description">Klika odpowiedź, którą Dymek uznał za pewną, z losowym opóźnieniem ustawionym w aplikacji. Nie czyta zawartości ekranu.</string>
 </resources>

@@ -6,13 +6,25 @@ import java.io.ByteArrayOutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Odpowiada na pytanie ze zrzutu ekranu krotkim tekstem do dymka. */
+/** Odpowiada na pytanie ze zrzutu ekranu: tekst do dymka i miejsce do klikniecia. */
 interface Answerer : AutoCloseable {
-    /** Nigdy nie rzuca bledow API: zwraca komunikat do pokazania w dymku. */
-    fun answer(screen: Bitmap): String
+    /**
+     * Jedno zapytanie do modelu o zrzut (JPEG w base64); z [search] model moze szukac w internecie,
+     * a [guess] to jego wczesniejszy strzal. Nigdy nie rzuca bledow API: zwraca [Answer.error].
+     */
+    fun ask(image: String, search: Boolean, guess: String): Answer
 
     /** Otwiera polaczenie z API zawczasu (TLS), zeby samo pytanie poszlo szybciej. Bledy ignoruje. */
     fun warmUp() {}
+
+    /** Szybka odpowiedz, a gdy model nie jest pewien, druga proba z wyszukiwaniem w internecie. */
+    fun solve(screen: Bitmap, searchWhenUnsure: Boolean): Answer {
+        val image = toJpegBase64(screen)
+        val first = ask(image, search = false, guess = "")
+        // pusta odpowiedz to brak pytania na ekranie, wtedy nie ma czego szukac
+        if (first.error || first.sure || first.text.isEmpty() || !searchWhenUnsure) return first
+        return ask(image, search = true, guess = first.text)
+    }
 
     companion object {
         fun create(settings: Settings): Answerer {
@@ -25,14 +37,26 @@ interface Answerer : AutoCloseable {
 
         const val USER_PROMPT = "Odpowiedz na pytanie z tego ekranu."
 
+        fun searchPrompt(guess: String) =
+            "Nie byłeś pewien odpowiedzi (pierwszy strzał: „$guess”). Sprawdź ją w internecie, najwyżej " +
+                "dwoma wyszukiwaniami, i odpowiedz tym samym jednym wierszem JSON. " +
+                "sure=true tylko, gdy źródła potwierdzają odpowiedź."
+
         val SYSTEM_PROMPT = """
-            Dostajesz zrzut ekranu telefonu z pytaniem z quizu na czas. Pytania dotyczą najczęściej gier
-            (gry wideo, ich postacie, serie, studia, daty premier, mechaniki, e-sport), ale mogą być o czymkolwiek.
-            Liczy się szybkość, więc odpowiedz natychmiast i jak najkrócej:
-            - przy pytaniu z opcjami podaj tylko literę lub numer i treść poprawnej opcji,
-            - w innym wypadku samą odpowiedź (słowo, liczbę, nazwę),
-            - bez wyjaśnień, wstępów i powtarzania pytania.
-            Pisz w języku pytania. Jeśli na ekranie nie ma pytania, napisz w kilku słowach, co widzisz.
+            Dostajesz zrzut ekranu telefonu z quizem na czas (Kahoot, Mentimeter, Quizizz, Wayground, Blooket,
+            Google Forms i podobne). Pytania są najczęściej o grach (gry wideo, postacie, serie, studia, daty premier,
+            mechaniki, e-sport), ale mogą być o czymkolwiek. Liczy się szybkość.
+            Odpowiedz wyłącznie jednym wierszem JSON, bez markdownu i bez wyjaśnień:
+            {"a":"…","s":"…","x":0,"y":0,"bx":-1,"by":-1,"sure":true}
+            a: poprawna odpowiedź jak najkrócej, w języku pytania (treść opcji, słowo, liczba). Gdy nie jesteś pewien,
+            najlepszy strzał. "" gdy na ekranie nie ma pytania albo widać same kształty bez treści pytania.
+            s: w Kahoot kształt poprawnej opcji: "triangle" (czerwony trójkąt), "diamond" (niebieski romb),
+            "circle" (żółte koło), "square" (zielony kwadrat). Poza Kahoot "".
+            x, y: środek przycisku z poprawną odpowiedzią na zrzucie w skali 0–1000 (0,0 to lewy górny róg,
+            1000,1000 prawy dolny). -1, gdy nie ma czego kliknąć.
+            bx, by: środek przycisku zatwierdzenia (np. „Wyślij”, „Submit”), jeśli trzeba go nacisnąć po wybraniu
+            odpowiedzi. Inaczej -1.
+            sure: true tylko, gdy jesteś pewien odpowiedzi. Przy zgadywaniu false.
         """.trimIndent()
 
         // tekst quizu jest duzy, wiec mniejszy obraz wystarcza, a mniej tokenow = szybsza odpowiedz

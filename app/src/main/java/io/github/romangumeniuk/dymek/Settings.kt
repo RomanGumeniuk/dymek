@@ -41,6 +41,21 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_CENTER_QUITS, true)
         set(value) = prefs.edit().putBoolean(KEY_CENTER_QUITS, value).apply()
 
+    /** Gdy model nie jest pewien, druga proba z wyszukiwaniem w internecie. */
+    var searchWhenUnsure: Boolean
+        get() = prefs.getBoolean(KEY_SEARCH, true)
+        set(value) = prefs.edit().putBoolean(KEY_SEARCH, value).apply()
+
+    /** Autoclicker sam stuka pewna odpowiedz (wymaga wlaczonej uslugi [TapService]). */
+    var autoClick: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CLICK, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_CLICK, value).apply()
+
+    /** Srednie opoznienie klikniecia w sekundach; za kazdym razem losowane od polowy do poltora tej wartosci. */
+    var clickDelaySeconds: Float
+        get() = prefs.getFloat(KEY_CLICK_DELAY, 1f)
+        set(value) = prefs.edit().putFloat(KEY_CLICK_DELAY, value.coerceIn(0f, MAX_CLICK_DELAY)).apply()
+
     /** Wola [onChange] po kazdej zmianie; zwrocony obiekt trzeba trzymac, bo prefs pamietaja go slabo. */
     fun listen(onChange: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> onChange() }
@@ -49,12 +64,17 @@ class Settings(context: Context) {
     fun unlisten(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
-    private companion object {
+    companion object {
+        const val MAX_CLICK_DELAY = 30f
+
         // "api_key" z wersji 1.0, zeby klucz Claude nie zniknal po aktualizacji
-        const val KEY_CLAUDE = "api_key"
-        const val KEY_GEMINI = "gemini_key"
-        const val KEY_MODEL = "model"
-        const val KEY_QUIET = "quiet_button"
-        const val KEY_CENTER_QUITS = "center_quits"
+        private const val KEY_CLAUDE = "api_key"
+        private const val KEY_GEMINI = "gemini_key"
+        private const val KEY_MODEL = "model"
+        private const val KEY_QUIET = "quiet_button"
+        private const val KEY_CENTER_QUITS = "center_quits"
+        private const val KEY_SEARCH = "search_when_unsure"
+        private const val KEY_AUTO_CLICK = "auto_click"
+        private const val KEY_CLICK_DELAY = "click_delay"
     }
 }

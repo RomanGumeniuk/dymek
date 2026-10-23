@@ -14,6 +14,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.graphics.Point
+import android.graphics.PointF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
@@ -43,10 +44,11 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.random.Random
 
 /**
  * Plywajacy przycisk nad innymi aplikacjami. Stukniecie: chowa przycisk, bierze ostatnia klatke ekranu
- * z MediaProjection, wysyla ja do Claude i pokazuje odpowiedz w dymku.
+ * z MediaProjection, wysyla ja do AI i pokazuje pewna odpowiedz w dymku albo klika ja przez [TapService].
  */
 class OverlayService : Service() {
     private val main = Handler(Looper.getMainLooper())
@@ -278,24 +280,79 @@ class OverlayService : Service() {
                     return@post
                 }
                 showBubble("Myślę…")
+                val search = settings.searchWhenUnsure
                 worker.execute {
-                    val text = try {
-                        answerer?.answer(bitmap) ?: "Dymek nie jest gotowy."
+                    val answer = try {
+                        answerer?.solve(bitmap, search) ?: Answer.error("Dymek nie jest gotowy.")
                     } catch (e: RuntimeException) {
-                        "Błąd: ${e.message}"
+                        Answer.error("Błąd: ${e.message}")
                     } finally {
                         bitmap.recycle()
                     }
                     // czas od stukniecia, zeby bylo widac, ktory model jest najszybszy
                     val seconds = (SystemClock.elapsedRealtime() - startedAt) / 1000.0
-                    val timed = String.format(Locale("pl"), "%s  ·  %.1f s", text, seconds)
+                    val time = String.format(Locale("pl"), "%.1f s", seconds)
                     main.post {
-                        if (button != null) showBubble(timed)
-                        busy = false
+                        if (button != null) deliver(answer, time) else busy = false
                     }
                 }
             }
         }, CAPTURE_DELAY_MS)
+    }
+
+    /** Pewna odpowiedz klika autoclicker albo pokazuje dymek; niepewnej nie pokazujemy wcale. */
+    private fun deliver(answer: Answer, time: String) {
+        val tapper = TapService.instance
+        val tap = answer.tap
+        when {
+            answer.error -> showBubble("${answer.text}  ·  $time")
+            !answer.sure || answer.text.isEmpty() -> showBubble("🤷  ·  $time")
+            !settings.autoClick -> showBubble("${answer.label}  ·  $time")
+            tapper == null -> showBubble("${answer.label}  ·  $time\nWłącz „Dymek: autoclicker” w Ułatwieniach dostępu.")
+            tap == null -> showBubble("${answer.label}  ·  $time\nNie wiem, gdzie kliknąć.")
+            else -> {
+                autoClick(tapper, tap, answer.confirm, answer.label, time)
+                return
+            }
+        }
+        busy = false
+    }
+
+    /** Klika po losowym opoznieniu, zeby czas odpowiedzi nie byl za kazdym razem taki sam. */
+    private fun autoClick(tapper: TapService, tap: PointF, confirm: PointF?, label: String, time: String) {
+        hideBubble()
+        val delay = (settings.clickDelaySeconds * 1000 * Random.nextDouble(0.5, 1.5)).toLong()
+        main.postDelayed({
+            val screen = screenSize()
+            passThrough(true)
+            tapper.tap(tap.x * screen.x, tap.y * screen.y) { tapped ->
+                // button == null: dymek zostal wylaczony w trakcie klikania
+                if (tapped && confirm != null && button != null) {
+                    // np. Mentimeter: po wybraniu opcji trzeba jeszcze nacisnac "Wyslij"
+                    main.postDelayed({
+                        tapper.tap(confirm.x * screen.x, confirm.y * screen.y) { afterClick(it, label, time) }
+                    }, Random.nextLong(250, 600))
+                } else {
+                    afterClick(tapped, label, time)
+                }
+            }
+        }, delay)
+    }
+
+    private fun afterClick(tapped: Boolean, label: String, time: String) {
+        passThrough(false)
+        if (button != null) showBubble(if (tapped) "👆 $label  ·  $time" else "Nie udało się kliknąć: $label")
+        busy = false
+    }
+
+    /** Na czas klikniecia przycisk znika i przepuszcza dotyk do aplikacji pod spodem. */
+    private fun passThrough(on: Boolean) {
+        val view = button ?: return
+        val notTouchable = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        buttonParams.flags = if (on) buttonParams.flags or notTouchable else buttonParams.flags and notTouchable.inv()
+        // Android przepuszcza dotyk tylko przez okna nakladki z przezroczystoscia do 0,8
+        buttonParams.alpha = if (on) 0f else 1f
+        wm.updateViewLayout(view, buttonParams)
     }
 
     private fun showButton() {

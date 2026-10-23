@@ -1,6 +1,5 @@
 package io.github.romangumeniuk.dymek
 
-import android.graphics.Bitmap
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -14,21 +13,21 @@ import org.json.JSONObject
  */
 class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice) : Answerer {
 
-    override fun answer(screen: Bitmap): String {
-        val image = Answerer.toJpegBase64(screen)
-        var result = send(requestBody(image, withThinkingLevel = true))
+    override fun ask(image: String, search: Boolean, guess: String): Answer {
+        val prompt = if (search) Answerer.searchPrompt(guess) else Answerer.USER_PROMPT
+        var result = send(requestBody(image, prompt, search, withThinkingLevel = true))
         // gdyby model nie znal poziomu myslenia, ponow bez niego
         if (result.code == 400 && result.body.contains("thinking", ignoreCase = true)) {
-            result = send(requestBody(image, withThinkingLevel = false))
+            result = send(requestBody(image, prompt, search, withThinkingLevel = false))
         }
         return when {
-            result.code == -1 -> "Brak połączenia z internetem."
+            result.code == -1 -> Answer.error("Brak połączenia z internetem.")
             result.code == 200 -> parseAnswer(result.body)
-            result.code == 429 -> "Limit darmowych zapytań Gemini wyczerpany, spróbuj za chwilę."
+            result.code == 429 -> Answer.error("Limit darmowych zapytań Gemini wyczerpany, spróbuj za chwilę.")
             result.code == 400 && result.body.contains("API_KEY_INVALID") ->
-                "Zły klucz API Gemini. Sprawdź go w aplikacji Dymek."
-            result.code == 403 -> "Klucz Gemini nie ma dostępu do tego modelu."
-            else -> "Błąd Gemini (${result.code}): ${errorMessage(result.body).take(160)}"
+                Answer.error("Zły klucz API Gemini. Sprawdź go w aplikacji Dymek.")
+            result.code == 403 -> Answer.error("Klucz Gemini nie ma dostępu do tego modelu.")
+            else -> Answer.error("Błąd Gemini (${result.code}): ${errorMessage(result.body).take(160)}")
         }
     }
 
@@ -50,14 +49,14 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
 
     override fun close() = Unit
 
-    private fun requestBody(imageBase64: String, withThinkingLevel: Boolean): String {
+    private fun requestBody(imageBase64: String, prompt: String, search: Boolean, withThinkingLevel: Boolean): String {
         val generationConfig = JSONObject().put("maxOutputTokens", 1024)
         if (withThinkingLevel) {
             // najnizszy poziom myslenia, jaki model obsluguje: w quizie liczy sie czas
             val level = if (model == ModelChoice.GEMINI_FLASH) "low" else "minimal"
             generationConfig.put("thinkingConfig", JSONObject().put("thinkingLevel", level))
         }
-        return JSONObject()
+        val body = JSONObject()
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(text(Answerer.SYSTEM_PROMPT))))
             .put(
                 "contents", JSONArray().put(
@@ -71,12 +70,14 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
                                         JSONObject().put("mimeType", "image/jpeg").put("data", imageBase64),
                                     )
                                 )
-                                .put(text(Answerer.USER_PROMPT))
+                                .put(text(prompt))
                         )
                 )
             )
             .put("generationConfig", generationConfig)
-            .toString()
+        // wyszukiwarka Google tylko przy drugiej probie, bo wydluza odpowiedz
+        if (search) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
+        return body.toString()
     }
 
     private fun text(value: String) = JSONObject().put("text", value)
@@ -104,27 +105,26 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
         // bez disconnect(): polaczenie zostaje otwarte dla nastepnego pytania
     }
 
-    private fun parseAnswer(body: String): String = try {
+    private fun parseAnswer(body: String): Answer = try {
         val json = JSONObject(body)
         val candidate = json.optJSONArray("candidates")?.optJSONObject(0)
         if (candidate == null) {
             val reason = json.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty()
-            if (reason.isNotEmpty()) "Gemini zablokował to zapytanie ($reason)." else "Brak odpowiedzi."
+            Answer.error(if (reason.isNotEmpty()) "Gemini zablokował to zapytanie ($reason)." else "Brak odpowiedzi.")
         } else {
             val parts = candidate.optJSONObject("content")?.optJSONArray("parts") ?: JSONArray()
             val text = (0 until parts.length())
                 .mapNotNull { parts.optJSONObject(it) }
                 .filter { !it.optBoolean("thought", false) }
-                .joinToString("\n") { it.optString("text") }
-                .trim()
+                .joinToString("") { it.optString("text") }
             when {
-                text.isNotEmpty() -> text
-                candidate.optString("finishReason") == "SAFETY" -> "Gemini zablokował odpowiedź."
-                else -> "Brak odpowiedzi."
+                text.isNotBlank() -> Answer.parse(text)
+                candidate.optString("finishReason") == "SAFETY" -> Answer.error("Gemini zablokował odpowiedź.")
+                else -> Answer.error("Brak odpowiedzi.")
             }
         }
     } catch (e: JSONException) {
-        "Nie udało się odczytać odpowiedzi Gemini."
+        Answer.error("Nie udało się odczytać odpowiedzi Gemini.")
     }
 
     private fun errorMessage(body: String): String = try {
