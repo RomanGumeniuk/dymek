@@ -11,6 +11,9 @@ interface Answerer : AutoCloseable {
     /** Nigdy nie rzuca bledow API: zwraca komunikat do pokazania w dymku. */
     fun answer(screen: Bitmap): String
 
+    /** Otwiera polaczenie z API zawczasu (TLS), zeby samo pytanie poszlo szybciej. Bledy ignoruje. */
+    fun warmUp() {}
+
     companion object {
         fun create(settings: Settings): Answerer {
             val model = settings.model
@@ -23,17 +26,19 @@ interface Answerer : AutoCloseable {
         const val USER_PROMPT = "Odpowiedz na pytanie z tego ekranu."
 
         val SYSTEM_PROMPT = """
-            Dostajesz zrzut ekranu telefonu. Zwykle jest na nim pytanie, np. z quizu, testu wiedzy albo zagadki.
-            Odpowiedz na nie jak najkrócej, bo odpowiedź pokaże się w małym dymku na ekranie:
-            - przy pytaniu z opcjami podaj literę lub numer i treść poprawnej opcji,
-            - w innym wypadku samą odpowiedź (słowo, liczbę, nazwę) i najwyżej jedno krótkie zdanie wyjaśnienia,
-            - bez wstępów i bez powtarzania pytania.
-            Pisz w języku, w którym jest pytanie. Jeśli na ekranie nie ma żadnego pytania, napisz w kilku słowach, co widzisz.
+            Dostajesz zrzut ekranu telefonu z pytaniem z quizu na czas. Pytania dotyczą najczęściej gier
+            (gry wideo, ich postacie, serie, studia, daty premier, mechaniki, e-sport), ale mogą być o czymkolwiek.
+            Liczy się szybkość, więc odpowiedz natychmiast i jak najkrócej:
+            - przy pytaniu z opcjami podaj tylko literę lub numer i treść poprawnej opcji,
+            - w innym wypadku samą odpowiedź (słowo, liczbę, nazwę),
+            - bez wyjaśnień, wstępów i powtarzania pytania.
+            Pisz w języku pytania. Jeśli na ekranie nie ma pytania, napisz w kilku słowach, co widzisz.
         """.trimIndent()
 
-        private const val MAX_SIDE = 1568
+        // tekst quizu jest duzy, wiec mniejszy obraz wystarcza, a mniej tokenow = szybsza odpowiedz
+        private const val MAX_SIDE = 1200
 
-        /** JPEG w base64, dluzszy bok do 1568 px: tyle modele i tak widza, a wysylka jest szybsza. */
+        /** JPEG w base64, dluzszy bok do 1200 px. */
         fun toJpegBase64(src: Bitmap): String {
             val longSide = max(src.width, src.height)
             val scaled = if (longSide > MAX_SIDE) {
@@ -43,7 +48,7 @@ interface Answerer : AutoCloseable {
                 src
             }
             val out = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
             if (scaled !== src) scaled.recycle()
             return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
         }

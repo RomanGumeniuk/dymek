@@ -25,6 +25,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.text.TextUtils
 import android.util.DisplayMetrics
 import android.view.Display
@@ -35,6 +36,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.TextView
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.hypot
@@ -60,6 +62,16 @@ class OverlayService : Service() {
 
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
     private var answerer: Answerer? = null
+
+    // Rozgrzewka polaczenia na osobnym watku, zeby nie blokowala pytania
+    private val warmer: ExecutorService = Executors.newSingleThreadExecutor()
+    private var lastWarmAt = 0L
+    private val keepWarm = object : Runnable {
+        override fun run() {
+            warmUp()
+            main.postDelayed(this, KEEP_WARM_MS)
+        }
+    }
 
     private var button: TextView? = null
     private lateinit var buttonParams: WindowManager.LayoutParams
@@ -121,6 +133,7 @@ class OverlayService : Service() {
         }
 
         answerer = Answerer.create(Settings(this))
+        main.post(keepWarm)
         showButton()
         return START_NOT_STICKY
     }
@@ -131,6 +144,7 @@ class OverlayService : Service() {
         button = null
         hideBubble()
         worker.shutdownNow()
+        warmer.shutdownNow()
         answerer?.close()
         answerer = null
         projectionCallback?.let { projection?.unregisterCallback(it) }
@@ -222,9 +236,19 @@ class OverlayService : Service() {
 
     // --- przycisk i dymek (watek glowny) ---
 
+    /** Otwiera polaczenie z API, chyba ze zrobilismy to przed chwila. */
+    private fun warmUp() {
+        val a = answerer ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastWarmAt < WARM_AGAIN_AFTER_MS) return
+        lastWarmAt = now
+        warmer.execute { a.warmUp() }
+    }
+
     private fun onTap() {
         if (busy) return
         busy = true
+        val startedAt = SystemClock.elapsedRealtime()
         hideBubble()
         // przycisk nie moze trafic na zrzut
         button?.visibility = View.INVISIBLE
@@ -250,8 +274,11 @@ class OverlayService : Service() {
                     } finally {
                         bitmap.recycle()
                     }
+                    // czas od stukniecia, zeby bylo widac, ktory model jest najszybszy
+                    val seconds = (SystemClock.elapsedRealtime() - startedAt) / 1000.0
+                    val timed = String.format(Locale("pl"), "%s  ·  %.1f s", text, seconds)
                     main.post {
-                        if (button != null) showBubble(text)
+                        if (button != null) showBubble(timed)
                         busy = false
                     }
                 }
@@ -371,6 +398,8 @@ class OverlayService : Service() {
                     startY = buttonParams.y
                     moved = false
                     longPressed = false
+                    // polaczenie zestawia sie, zanim palec sie podniesie
+                    warmUp()
                     main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout() * 2L)
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -429,7 +458,10 @@ class OverlayService : Service() {
 
         private const val CHANNEL = "dymek"
         private const val NOTIFICATION_ID = 1
-        private const val CAPTURE_DELAY_MS = 250L
+        // tyle wystarcza, zeby na klatce nie bylo juz przycisku
+        private const val CAPTURE_DELAY_MS = 150L
+        private const val KEEP_WARM_MS = 45_000L
+        private const val WARM_AGAIN_AFTER_MS = 20_000L
         private const val ACCENT = 0xFFD97757.toInt()
     }
 }

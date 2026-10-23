@@ -27,24 +27,31 @@ Do wyboru płatny **Claude** albo darmowy **Gemini**.
 | Przeciągnięcie | przesuwa przycisk |
 | Przytrzymanie | wyłącza Dymek |
 
-Modele:
+Modele, od najszybszego:
 
 | Model | Koszt | Uwagi |
 | --- | --- | --- |
-| Claude Opus 5.5 | płatny | domyślny, najdokładniejszy |
-| Claude Sonnet 5.5 | płatny | szybszy |
-| Claude Haiku 5.5 | płatny, najtańszy | najszybszy z Claude |
-| Gemini 3.8 Flash | darmowy | z limitami Google |
-| Gemini 3.5 Flash-Lite | darmowy | najszybszy, z limitami Google |
+| Gemini 3.5 Flash-Lite | darmowy | domyślny, najszybszy, z limitami Google |
+| Claude Haiku 5.5 | płatny, najtańszy | bardzo szybki, bez myślenia |
+| Gemini 3.8 Flash | darmowy | dokładniejszy, z limitami Google |
+| Claude Sonnet 5.5 | płatny | szybki i dokładny, bez myślenia |
+| Claude Opus 5.5 | płatny | najdokładniejszy, wolniejszy |
 
-W quizie na czas warto wybrać szybszy model.
+Pod dymkiem widać czas od stuknięcia do odpowiedzi, więc łatwo porównać modele.
+
+## Szybkość
+
+- Prompt jest pod quizy na czas, najczęściej o grach: model podaje samą odpowiedź, bez wyjaśnień.
+- Połączenie z API otwiera się zawczasu (przy starcie, co 45 s i w chwili dotknięcia przycisku),
+  więc pytanie nie czeka na zestawienie TLS.
+- Zrzut jest zmniejszany do 1200 px, a szybkie modele odpowiadają bez myślenia.
 
 ## Jak to działa
 
 - `MainActivity` zapisuje klucz i model w prywatnych ustawieniach aplikacji (bez kopii zapasowej w chmurze)
   i prosi o zgody.
 - `OverlayService` to usługa pierwszoplanowa z `MediaProjection`: trzyma ostatnią klatkę ekranu, a po stuknięciu
-  chowa przycisk, bierze klatkę, zmniejsza ją do 1568 px i wysyła jako JPEG.
+  chowa przycisk, bierze klatkę, zmniejsza ją do 1200 px i wysyła jako JPEG.
 - `ClaudeAnswerer` woła Messages API przez oficjalne SDK `com.anthropic:anthropic-java`
   (klucz idzie tylko do `api.anthropic.com`).
 - `GeminiAnswerer` woła REST `generateContent` (klucz w nagłówku, tylko do `generativelanguage.googleapis.com`).

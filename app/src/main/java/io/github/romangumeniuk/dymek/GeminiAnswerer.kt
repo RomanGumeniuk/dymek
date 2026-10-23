@@ -32,10 +32,26 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
         }
     }
 
+    override fun warmUp() {
+        // darmowe zapytanie o model: polaczenie zostaje w puli keep-alive HttpURLConnection
+        val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/${model.id}")
+            .openConnection() as HttpURLConnection
+        try {
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.setRequestProperty("x-goog-api-key", apiKey)
+            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
+            // odpowiedz trzeba doczytac do konca, inaczej polaczenie nie wroci do puli
+            stream?.use { it.readBytes() }
+        } catch (e: IOException) {
+            // rozgrzewka nie jest konieczna
+        }
+    }
+
     override fun close() = Unit
 
     private fun requestBody(imageBase64: String, withThinkingLevel: Boolean): String {
-        val generationConfig = JSONObject().put("maxOutputTokens", 4096)
+        val generationConfig = JSONObject().put("maxOutputTokens", 1024)
         if (withThinkingLevel) {
             // najnizszy poziom myslenia, jaki model obsluguje: w quizie liczy sie czas
             val level = if (model == ModelChoice.GEMINI_FLASH) "low" else "minimal"
@@ -84,9 +100,8 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
             HttpResult(code, stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty())
         } catch (e: IOException) {
             HttpResult(-1, "")
-        } finally {
-            conn.disconnect()
         }
+        // bez disconnect(): polaczenie zostaje otwarte dla nastepnego pytania
     }
 
     private fun parseAnswer(body: String): String = try {

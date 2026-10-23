@@ -26,7 +26,8 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
     override fun answer(screen: Bitmap): String {
         val builder = MessageCreateParams.builder()
             .model(model.id)
-            .maxTokens(4000L)
+            // Opus zawsze mysli, wiec potrzebuje miejsca; pozostale odpowiadaja od razu
+            .maxTokens(if (model == ModelChoice.OPUS) 4000L else 512L)
             .system(Answerer.SYSTEM_PROMPT)
             // niski wysilek = szybka odpowiedz, a w quizie liczy sie czas
             .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
@@ -45,10 +46,17 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
                     ContentBlockParam.ofText(TextBlockParam.builder().text(Answerer.USER_PROMPT).build()),
                 )
             )
-        if (model != ModelChoice.HAIKU) {
-            // gdy model odmowi, serwer sam ponawia na innym modelu (Haiku tego nie ma)
-            builder.putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
-            builder.putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
+        when (model) {
+            // bez myslenia odpowiedz przychodzi najszybciej
+            ModelChoice.HAIKU ->
+                builder.putAdditionalBodyProperty("thinking", JsonValue.from(mapOf("type" to "disabled")))
+            ModelChoice.SONNET ->
+                builder.putAdditionalBodyProperty("thinking", JsonValue.from(mapOf("type" to "between_tools")))
+            else -> {
+                // Opus nie wylacza myslenia; gdy odmowi, serwer sam ponawia na innym modelu
+                builder.putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
+                builder.putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
+            }
         }
 
         val response = try {
@@ -75,6 +83,15 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
             .joinToString("\n")
             .trim()
         return text.ifEmpty { "Brak odpowiedzi." }
+    }
+
+    override fun warmUp() {
+        // darmowe zapytanie o model: zostawia otwarte polaczenie w puli OkHttp
+        try {
+            client.models().retrieve(model.id)
+        } catch (e: RuntimeException) {
+            // rozgrzewka nie jest konieczna
+        }
     }
 
     override fun close() = client.close()
