@@ -13,8 +13,9 @@ import org.json.JSONObject
  */
 class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice) : Answerer {
 
-    override fun ask(image: String, search: Boolean, guess: String): Answer {
-        val prompt = if (search) Answerer.searchPrompt(guess) else Answerer.USER_PROMPT
+    override fun ask(image: String, unsure: Answer?): Answer {
+        val search = unsure != null
+        val prompt = unsure?.let { Answerer.searchPrompt(it) } ?: Answerer.USER_PROMPT
         var result = send(requestBody(image, prompt, search, withThinkingLevel = true))
         // gdyby model nie znal poziomu myslenia, ponow bez niego
         if (result.code == 400 && result.body.contains("thinking", ignoreCase = true)) {
@@ -117,8 +118,10 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
                 .mapNotNull { parts.optJSONObject(it) }
                 .filter { !it.optBoolean("thought", false) }
                 .joinToString("") { it.optString("text") }
+            // zapytania, ktore model faktycznie wyslal do wyszukiwarki Google
+            val searches = candidate.optJSONObject("groundingMetadata")?.optJSONArray("webSearchQueries")?.length() ?: 0
             when {
-                text.isNotBlank() -> Answer.parse(text)
+                text.isNotBlank() -> Answer.parse(text).copy(searches = searches)
                 candidate.optString("finishReason") == "SAFETY" -> Answer.error("Gemini zablokował odpowiedź.")
                 else -> Answer.error("Brak odpowiedzi.")
             }

@@ -43,8 +43,11 @@ object SpeedTest {
             answerer.warmUp()
             listOf(
                 settings.model.label,
-                measure("bez wyszukiwania") { answerer.ask(image, search = false, guess = "") },
-                measure("z wyszukiwaniem") { answerer.ask(image, search = true, guess = CORRECT) },
+                measure("bez wyszukiwania") { answerer.ask(image) },
+                // jak w dymku po niepewnej odpowiedzi: druga proba z wyszukiwarka
+                measure("z wyszukiwaniem") {
+                    answerer.ask(image, unsure = Answer(CORRECT, QUESTION, confidence = 50)).copy(searched = true)
+                },
             ).joinToString("\n")
         }
     }
@@ -61,7 +64,8 @@ object SpeedTest {
             val hit = answer.tap?.let { good.box.contains(it.x, it.y) } == true
             listOfNotNull(answer.shape?.emoji, answer.text).joinToString(" ") +
                 (if (correct) ", poprawna ✓" else ", błędna ✗") +
-                (if (answer.sure) ", pewna" else ", niepewna") +
+                ", pewność ${answer.confidence}%" + (if (answer.sure) " ✓" else " ✗ (dymek pokazałby 🤷)") +
+                (if (answer.searched) ", wyszukiwań: ${answer.searches}" else "") +
                 (if (hit) ", kliknięcie trafia ✓" else ", kliknięcie pudłuje ✗")
         }
         return String.format(Locale("pl"), "• %s: %.1f s, %s", name, seconds, result)

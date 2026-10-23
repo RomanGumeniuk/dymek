@@ -93,9 +93,10 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, checked -> settings.searchWhenUnsure = checked }
         })
         column.addView(note(
-            "Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej 🤷). W Kahoot zamiast tekstu " +
-                "pokazuje kształt: 🔺 🔷 🟡 🟩. Sprawdzanie w internecie dodaje kilka sekund; w Claude wyszukiwania " +
-                "są dodatkowo płatne, a w Gemini wliczają się w darmowe limity Google."
+            "Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej 🤷 z pewnością w procentach). " +
+                "Bez internetu odpowiedź musi mieć 90% pewności, po wyszukaniu 70%; 🔍2 przy czasie to 2 wyszukiwania. " +
+                "W Kahoot zamiast tekstu pokazuje kształt: 🔺 🔷 🟡 🟩. Sprawdzanie w internecie dodaje kilka sekund; " +
+                "w Claude wyszukiwania są dodatkowo płatne, a w Gemini wliczają się w darmowe limity Google."
         ))
 
         column.addView(label("Autoclicker"))

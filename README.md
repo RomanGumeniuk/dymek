@@ -36,11 +36,13 @@ W ustawieniach są dwie opcje przycisku (działają od razu, także przy włącz
 
 ## Odpowiedzi
 
-- AI odpowiada tylko, gdy jest pewne. Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej `🤷`).
-- Gdy AI nie jest pewne, pyta drugi raz z wyszukiwaniem w internecie (Google Search w Gemini,
-  web search w Claude). Można to wyłączyć; w Claude wyszukiwania są dodatkowo płatne.
+- AI podaje pewność w procentach. Bez internetu odpowiedź musi mieć co najmniej 90%, inaczej dymek pyta drugi raz,
+  a model musi najpierw wyszukać odpowiedź w internecie (Google Search w Gemini, web search w Claude).
+  Po wyszukaniu wystarcza 70%. Można to wyłączyć; w Claude wyszukiwania są dodatkowo płatne.
+- Niepewnej odpowiedzi dymek nie pokazuje ani nie klika: zamiast niej `🤷` z pewnością, np. `🤷 55%`.
 - W Kahoot dymek pokazuje sam kształt poprawnej odpowiedzi: 🔺 🔷 🟡 🟩.
-- `🔍` przy czasie w dymku znaczy, że odpowiedź wymagała sprawdzenia w internecie.
+- `🔍2` przy czasie w dymku znaczy, że odpowiedź wymagała sprawdzenia w internecie, a model wyszukał 2 razy
+  (`🔍0`: druga próba była, ale model nie szukał). W trakcie wyszukiwania dymek pokazuje „Szukam w internecie…”.
 - Gdy Kahoot pokazuje na telefonie same kształty bez treści pytania, AI nie ma czego przeczytać i nie zgaduje.
 
 ## Autoclicker
@@ -84,8 +86,8 @@ i trafienie kliknięcia, raz bez wyszukiwania i raz z wyszukiwaniem.
 - `ClaudeAnswerer` woła Messages API przez oficjalne SDK `com.anthropic:anthropic-java`
   (klucz idzie tylko do `api.anthropic.com`).
 - `GeminiAnswerer` woła REST `generateContent` (klucz w nagłówku, tylko do `generativelanguage.googleapis.com`).
-- Model odpowiada jednym wierszem JSON (`Answer`): odpowiedź, kształt z Kahoot, punkt do kliknięcia w skali
-  0–1000, ewentualny przycisk zatwierdzenia i pewność.
+- Model odpowiada jednym wierszem JSON (`Answer`): pytanie z ekranu, odpowiedź, kształt z Kahoot, punkt
+  do kliknięcia w skali 0–1000, ewentualny przycisk zatwierdzenia i pewność w procentach.
 - `TapService` to usługa ułatwień dostępu, która klika przez `dispatchGesture`.
 
 Ograniczenia: aplikacje blokujące zrzuty ekranu (bankowe, niektóre z DRM) dają czarny obraz.

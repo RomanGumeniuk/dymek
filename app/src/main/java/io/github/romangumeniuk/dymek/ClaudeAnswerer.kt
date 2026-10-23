@@ -24,7 +24,8 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
         .apiKey(apiKey)
         .build()
 
-    override fun ask(image: String, search: Boolean, guess: String): Answer {
+    override fun ask(image: String, unsure: Answer?): Answer {
+        val search = unsure != null
         val builder = MessageCreateParams.builder()
             .model(model.id)
             // Opus zawsze mysli, a wyszukiwanie doklada kilka krokow, wiec oba potrzebuja miejsca
@@ -52,7 +53,7 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
                     ),
                     ContentBlockParam.ofText(
                         TextBlockParam.builder()
-                            .text(if (search) Answerer.searchPrompt(guess) else Answerer.USER_PROMPT)
+                            .text(unsure?.let { Answerer.searchPrompt(it) } ?: Answerer.USER_PROMPT)
                             .build()
                     ),
                 )
@@ -96,14 +97,16 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
 
         when (response.stopReason().map { it.toString() }.orElse("")) {
             "refusal" -> return Answer.error("Claude odmówił odpowiedzi na to pytanie.")
-            // wyszukiwanie nie skonczylo sie w jednej turze: to nie jest pewna odpowiedz
-            "pause_turn" -> return Answer(guess)
+            // wyszukiwanie nie skonczylo sie w jednej turze: zostaje niepewna odpowiedz bez internetu
+            "pause_turn" -> return unsure ?: Answer.error("Brak odpowiedzi.")
         }
+        val content = response.content()
         // przy wyszukiwaniu odpowiedz bywa pocieta na kilka blokow z cytatami, wiec laczymy bez odstepow
-        val text = response.content()
+        val text = content
             .mapNotNull { block -> block.text().map { it.text() }.orElse(null) }
             .joinToString("")
-        return Answer.parse(text)
+        // kazde uzycie narzedzia po stronie serwera to tu wyszukiwanie (albo filtrowanie jego wynikow)
+        return Answer.parse(text).copy(searches = content.count { it.isServerToolUse() })
     }
 
     override fun warmUp() {

@@ -284,7 +284,9 @@ class OverlayService : Service() {
                 val search = settings.searchWhenUnsure
                 worker.execute {
                     val answer = try {
-                        answerer?.solve(bitmap, search) ?: Answer.error("Dymek nie jest gotowy.")
+                        answerer?.solve(bitmap, search) {
+                            main.post { if (button != null) showBubble("Szukam w internecie…") }
+                        } ?: Answer.error("Dymek nie jest gotowy.")
                     } catch (e: RuntimeException) {
                         Answer.error("Błąd: ${e.message}")
                     } finally {
@@ -303,13 +305,15 @@ class OverlayService : Service() {
 
     /** Pewna odpowiedz klika autoclicker albo pokazuje dymek; niepewnej nie pokazujemy wcale. */
     private fun deliver(answer: Answer, seconds: String) {
-        // lupa: odpowiedz wymagala sprawdzenia w internecie, stad dluzszy czas
-        val time = if (answer.searched) "🔍 $seconds" else seconds
+        // lupa z liczba wyszukiwan: odpowiedz wymagala sprawdzenia w internecie, stad dluzszy czas
+        val time = if (answer.searched) "🔍${answer.searches} $seconds" else seconds
         val tapper = TapService.instance
         val tap = answer.tap
         when {
             answer.error -> showBubble("${answer.text}  ·  $time")
-            !answer.sure || answer.text.isEmpty() -> showBubble("🤷  ·  $time")
+            // pewnosc w procentach mowi, jak daleko bylo do progu
+            answer.text.isEmpty() -> showBubble("🤷  ·  $time")
+            !answer.sure -> showBubble("🤷 ${answer.confidence}%  ·  $time")
             !settings.autoClick -> showBubble("${answer.label}  ·  $time")
             tapper == null -> showBubble("${answer.label}  ·  $time\nWłącz „Dymek: autoclicker” w Ułatwieniach dostępu.")
             tap == null -> showBubble("${answer.label}  ·  $time\nNie wiem, gdzie kliknąć.")
