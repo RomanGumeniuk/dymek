@@ -52,23 +52,20 @@ jobs:
           name: dymek-apk
           path: dymek.apk
 
+      # tag z pushu albo, przy recznym uruchomieniu z "release", z wersji aplikacji na tym commicie;
+      # wydanie utworzone wczesniej (np. na stronie GitHuba) dostaje tylko nowy APK
       - name: Wydanie
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
         env:
           GH_TOKEN: ${{ github.token }}
-        # wydanie razem z tagiem mozna tez utworzyc na stronie GitHuba; wtedy tylko dokladamy do niego APK
         run: |
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dymek.apk --clobber
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
           else
-            gh release create "$GITHUB_REF_NAME" dymek.apk --title "Dymek $GITHUB_REF_NAME" --generate-notes
+            TAG="v$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)"
           fi
-
-      # reczne uruchomienie z zaznaczonym "release": tag z wersji aplikacji na tym commicie
-      - name: Wydanie z recznego uruchomienia
-        if: github.event_name == 'workflow_dispatch' && inputs.release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          gh release create "v$VERSION" dymek.apk --target "$GITHUB_SHA" --title "Dymek v$VERSION" --generate-notes
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dymek.apk --clobber
+          else
+            gh release create "$TAG" dymek.apk --target "$GITHUB_SHA" --title "Dymek $TAG" --generate-notes
+          fi
