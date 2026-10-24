@@ -35,6 +35,8 @@ class MainActivity : Activity() {
     private lateinit var delayInput: EditText
     private lateinit var tapStatus: TextView
     private lateinit var testResult: TextView
+    private lateinit var modeGroup: RadioGroup
+    private val modeRadios = mutableMapOf<Mode, RadioButton>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,16 +94,29 @@ class MainActivity : Activity() {
             isChecked = settings.slickBubble
             setOnCheckedChangeListener { _, checked -> settings.slickBubble = checked }
         })
-        column.addView(CheckBox(this).apply {
-            text = "Gdy AI nie jest pewne, sprawdza w internecie"
-            isChecked = settings.searchWhenUnsure
-            setOnCheckedChangeListener { _, checked -> settings.searchWhenUnsure = checked }
-        })
         column.addView(note(
             "Niepewnej odpowiedzi dymek nie pokazuje ani nie klika (zamiast niej „Nie wiem” z pewnością w procentach). " +
-                "Bez internetu odpowiedź musi mieć 90% pewności, po wyszukaniu 70%; 🔍2 przy czasie to 2 wyszukiwania. " +
-                "W Kahoot zamiast tekstu pokazuje kształt (▲ ◆ ● ■). Sprawdzanie w internecie dodaje kilka sekund; " +
-                "w Claude wyszukiwania są dodatkowo płatne, a w Gemini wliczają się w darmowe limity Google."
+                "Gdy AI nie jest dość pewne, sprawdza odpowiedź w internecie; 🔍2 przy czasie to 2 wyszukiwania. " +
+                "W Kahoot zamiast tekstu pokazuje kształt (▲ ◆ ● ■). Wyszukiwanie dodaje kilka sekund; w Claude " +
+                "jest dodatkowo płatne, a w Gemini wlicza się w darmowe limity Google."
+        ))
+
+        column.addView(label("Tryb"), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(12) })
+        modeGroup = RadioGroup(this)
+        for (mode in Mode.entries) {
+            val radio = RadioButton(this).apply {
+                id = View.generateViewId()
+                text = modeDescription(mode)
+                setOnCheckedChangeListener { _, checked -> if (checked) settings.mode = mode }
+            }
+            modeRadios[mode] = radio
+            modeGroup.addView(radio)
+        }
+        modeRadios.getValue(settings.mode).isChecked = true
+        column.addView(modeGroup)
+        column.addView(note(
+            "W trakcie quizu tryb zmienisz, przeciągając przycisk do lewego górnego rogu (Szybki), prawego górnego " +
+                "(Dokładny) albo na dół ekranu (Zbalansowany). Obwódka przycisku pokazuje tryb: żółta, biała, niebieska."
         ))
 
         column.addView(label("Autoclicker"))
@@ -233,6 +248,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // tryb mogl sie zmienic przeciagnieciem przycisku
+        modeRadios[settings.mode]?.isChecked = true
         // wraca tu z ustawien ulatwien dostepu, wiec stan uslugi mogl sie zmienic
         tapStatus.text = if (TapService.instance != null) {
             "Usługa autoclickera: włączona ✓"
@@ -331,6 +348,17 @@ class MainActivity : Activity() {
     private fun label(text: String) = TextView(this).apply {
         this.text = text
         setTypeface(typeface, Typeface.BOLD)
+    }
+
+    private fun modeDescription(mode: Mode): String {
+        val searches = if (mode.maxSearches == 1) "1 wyszukiwanie" else "do ${mode.maxSearches} wyszukiwań"
+        val intro = when (mode) {
+            Mode.QUICK -> "do łatwych pytań, najszybszy"
+            Mode.BALANCED -> "pośrodku"
+            Mode.ACCURATE -> "AI dłużej myśli"
+        }
+        return "${mode.label}: $intro. Wystarcza ${mode.sureFirst}% pewności, inaczej $searches w internecie " +
+            "i wtedy ${mode.sureSearched}%."
     }
 
     private fun note(text: String) = TextView(this).apply {

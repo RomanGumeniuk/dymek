@@ -90,9 +90,9 @@ class OverlayService : Service() {
     private var bubble: TextView? = null
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private var bubbleShown = false
-    private var target: TextView? = null
-    private lateinit var targetParams: WindowManager.LayoutParams
-    private var targetShown = false
+    private val targets = mutableListOf<Target>()
+    private lateinit var zones: DropZones
+    private var bubbleVersion = 0
     private var tapMark: View? = null
     private var busy = false
 
@@ -164,7 +164,7 @@ class OverlayService : Service() {
         button?.let { wm.removeView(it) }
         button = null
         hideBubble()
-        hideTarget()
+        hideTargets()
         tapMark?.let { wm.removeView(it) }
         tapMark = null
         worker.shutdownNow()
@@ -290,10 +290,10 @@ class OverlayService : Service() {
                     return@post
                 }
                 showBubble("Myślę…")
-                val search = settings.searchWhenUnsure
+                val mode = settings.mode
                 worker.execute {
                     val answer = try {
-                        answerer?.solve(bitmap, search) {
+                        answerer?.solve(bitmap, mode) {
                             main.post { if (button != null) showBubble(if (settings.slickBubble) "🔍 Szukam…" else "Szukam w internecie…") }
                         } ?: Answer.error("Dymek nie jest gotowy.")
                     } catch (e: RuntimeException) {
@@ -305,7 +305,7 @@ class OverlayService : Service() {
                     val seconds = (SystemClock.elapsedRealtime() - startedAt) / 1000.0
                     val time = String.format(Locale("pl"), "%.1f s", seconds)
                     main.post {
-                        if (button != null) deliver(answer, time) else busy = false
+                        if (button != null) deliver(answer, time, mode) else busy = false
                     }
                 }
             }
@@ -313,7 +313,7 @@ class OverlayService : Service() {
     }
 
     /** Pewna odpowiedz klika autoclicker albo pokazuje dymek; niepewnej nie pokazujemy wcale. */
-    private fun deliver(answer: Answer, seconds: String) {
+    private fun deliver(answer: Answer, seconds: String, mode: Mode) {
         // lupa z liczba wyszukiwan: odpowiedz wymagala sprawdzenia w internecie, stad dluzszy czas
         val meta = if (answer.searched) "🔍${answer.searches} $seconds" else seconds
         val tapper = TapService.instance
@@ -321,7 +321,7 @@ class OverlayService : Service() {
             answer.error -> showBubble(answer.text, meta)
             answer.text.isEmpty() -> showBubble(unknownLabel(), meta)
             // pewnosc w procentach mowi, jak daleko bylo do progu
-            !answer.sure -> showBubble(unknownLabel(), "${answer.confidence}%  ·  $meta")
+            !answer.sureIn(mode) -> showBubble(unknownLabel(), "${answer.confidence}%  ·  $meta")
             !settings.autoClick -> showBubble(answerLabel(answer), meta)
             tapper == null -> showBubble(answerLabel(answer), "$meta\nWłącz „Dymek: autoclicker” w Ułatwieniach dostępu.")
             else -> {
@@ -448,7 +448,7 @@ class OverlayService : Service() {
         styleButton()
     }
 
-    /** Zwykly przycisk jest pomaranczowy, mniej widoczny: maly, szary i polprzezroczysty. */
+    /** Zwykly przycisk jest pomaranczowy z obwodka trybu, mniej widoczny: maly, szary i polprzezroczysty. */
     private fun styleButton() {
         val view = button ?: return
         val quiet = settings.quietButton
@@ -458,7 +458,8 @@ class OverlayService : Service() {
         view.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(if (quiet) QUIET_COLOR else ACCENT)
-            if (!quiet) setStroke(dp(2), 0xFFFFFFFF.toInt())
+            // obwodka w kolorze trybu: zolta Szybki, biala Zbalansowany, niebieska Dokladny
+            if (!quiet) setStroke(dp(2), settings.mode.color)
         }
         // srodek przycisku zostaje tam, gdzie byl
         val shift = (buttonParams.width - size) / 2
@@ -489,6 +490,7 @@ class OverlayService : Service() {
             // stukniecie zamyka dymek
             setOnClickListener { hideBubble() }
         }.also { bubble = it }
+        bubbleVersion++
         val slick = settings.slickBubble
         val text = SpannableStringBuilder(main)
         if (slick) {
@@ -557,63 +559,84 @@ class OverlayService : Service() {
         }
     }
 
-    /** Kolko z krzyzykiem na srodku ekranu, widoczne tylko w czasie przeciagania przycisku (jak w Messengerze). */
-    private fun showTarget() {
-        if (targetShown) return
-        val view = target ?: TextView(uiContext).apply {
-            gravity = Gravity.CENTER
-            setTextColor(0xFFFFFFFF.toInt())
-            contentDescription = "Upuść tu przycisk, żeby zamknąć Dymek"
-        }.also { target = it }
-        // te same wspolrzedne okna co przycisk, wiec srodek ekranu liczy sie dla obu tak samo
-        targetParams = overlayParams(0, 0).apply {
-            // dotyk idzie dalej, do przeciaganego przycisku
-            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+    /**
+     * Miejsca do upuszczenia przycisku, widoczne tylko w czasie przeciagania (jak w Messengerze): tryby w rogach
+     * u gory i na dole, a na srodku krzyzyk, ktory zamyka aplikacje.
+     */
+    private fun showTargets() {
+        if (targets.isNotEmpty()) return
+        val screen = screenSize()
+        zones = DropZones(screen.x, screen.y, resources.displayMetrics.density, withQuit = settings.centerQuits)
+        for ((drop, center) in zones.centers) {
+            val view = TextView(uiContext).apply {
+                gravity = Gravity.CENTER
+                setTextColor(0xFFFFFFFF.toInt())
+                contentDescription = drop.mode?.let { "Upuść tu przycisk: tryb ${it.label}" }
+                    ?: "Upuść tu przycisk, żeby zamknąć Dymek"
+            }
+            // te same wspolrzedne okna co przycisk, wiec odleglosci licza sie dla obu tak samo
+            val params = overlayParams(0, 0).apply {
+                // dotyk idzie dalej, do przeciaganego przycisku
+                flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
+            val target = Target(drop, view, params, center)
+            styleTarget(target, active = false)
+            wm.addView(view, params)
+            targets += target
         }
-        highlightTarget(false)
-        wm.addView(view, targetParams)
-        targetShown = true
     }
 
-    /** Gdy przycisk jest przyciagniety, kolko robi sie wiekszym czerwonym pierscieniem wokol niego. */
-    private fun highlightTarget(on: Boolean) {
-        val view = target ?: return
-        val size = dp(if (on) TARGET_ACTIVE_DP else TARGET_DP)
-        val screen = screenSize()
-        targetParams.width = size
-        targetParams.height = size
-        targetParams.x = (screen.x - size) / 2
-        targetParams.y = (screen.y - size) / 2
-        view.text = if (on) "" else "✕"
-        view.textSize = 22f
-        view.background = GradientDrawable().apply {
+    /** Przyciagniete miejsce robi sie wieksze; krzyzyk zmienia sie w czerwony pierscien wokol przycisku. */
+    private fun styleTarget(target: Target, active: Boolean) {
+        val size = dp(if (active) DropZones.TARGET_ACTIVE_DP else DropZones.TARGET_DP)
+        target.params.width = size
+        target.params.height = size
+        target.params.x = target.center.x - size / 2
+        target.params.y = target.center.y - size / 2
+        val mode = target.drop.mode
+        val current = mode != null && mode == settings.mode
+        target.view.text = mode?.short ?: if (active) "" else "✕"
+        target.view.textSize = if (mode != null) 12f else 22f
+        target.view.setTypeface(null, if (current) Typeface.BOLD else Typeface.NORMAL)
+        target.view.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            if (on) {
-                setColor(0x55D93025)
-                setStroke(dp(4), 0xFFD93025.toInt())
-            } else {
-                setColor(0x99000000.toInt())
-                setStroke(dp(2), 0xFFFFFFFF.toInt())
+            when {
+                mode == null && active -> {
+                    setColor(0x55D93025)
+                    setStroke(dp(4), 0xFFD93025.toInt())
+                }
+                mode != null && active -> {
+                    setColor(0xCC000000.toInt())
+                    setStroke(dp(4), mode.color)
+                }
+                else -> {
+                    setColor(0x99000000.toInt())
+                    // obecny tryb ma obwodke w swoim kolorze
+                    setStroke(dp(2), if (current) mode!!.color else 0xFFFFFFFF.toInt())
+                }
             }
         }
-        if (targetShown) wm.updateViewLayout(view, targetParams)
     }
 
-    /** Czy przycisk w punkcie (x, y) okna ma srodek blisko kolka na srodku ekranu. */
-    private fun nearTarget(x: Int, y: Int): Boolean {
-        if (!targetShown) return false
-        val screen = screenSize()
-        val cx = x + buttonParams.width / 2f
-        val cy = y + buttonParams.height / 2f
-        return hypot(cx - screen.x / 2f, cy - screen.y / 2f) < dp(TARGET_PULL_DP)
+    /** Miejsce, do ktorego przyciaga przycisk w punkcie (x, y) okna, albo null. */
+    private fun targetNear(x: Int, y: Int): Target? {
+        if (targets.isEmpty()) return null
+        val drop = zones.nearest(x + buttonParams.width / 2f, y + buttonParams.height / 2f) ?: return null
+        return targets.firstOrNull { it.drop == drop }
     }
 
-    private fun hideTarget() {
-        val view = target ?: return
-        if (targetShown) {
-            wm.removeView(view)
-            targetShown = false
-        }
+    private fun hideTargets() {
+        targets.forEach { wm.removeView(it.view) }
+        targets.clear()
+    }
+
+    /** Tryb z przeciagniecia: przycisk dostaje kolor trybu, a dymek na chwile mowi, ktory jest wlaczony. */
+    private fun switchMode(mode: Mode) {
+        // obwodke przycisku zmienia sluchacz ustawien (styleButton)
+        settings.mode = mode
+        showBubble("Tryb: ${mode.label}")
+        val version = bubbleVersion
+        main.postDelayed({ if (bubbleVersion == version) hideBubble() }, NOTICE_MS)
     }
 
     /** Wylacza dymek i zamyka cala aplikacje, razem z ekranem ustawien na liscie ostatnich aplikacji. */
@@ -623,8 +646,8 @@ class OverlayService : Service() {
     }
 
     /**
-     * Przeciaganie przycisku; krotkie stukniecie pyta Claude, przytrzymanie wylacza dymek,
-     * a upuszczenie na srodku ekranu zamyka cala aplikacje.
+     * Przeciaganie przycisku; krotkie stukniecie pyta AI, przytrzymanie wylacza dymek, upuszczenie w rogu u gory
+     * albo na dole zmienia tryb, a upuszczenie na srodku ekranu zamyka cala aplikacje.
      */
     private inner class DragTouch : View.OnTouchListener {
         private val slop = ViewConfiguration.get(uiContext).scaledTouchSlop
@@ -634,7 +657,7 @@ class OverlayService : Service() {
         private var startY = 0
         private var moved = false
         private var longPressed = false
-        private var overTarget = false
+        private var snapped: Target? = null
         private val longPress = Runnable {
             longPressed = true
             button?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -650,7 +673,7 @@ class OverlayService : Service() {
                     startY = buttonParams.y
                     moved = false
                     longPressed = false
-                    overTarget = false
+                    snapped = null
                     // polaczenie zestawia sie, zanim palec sie podniesie
                     warmUp()
                     main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout() * 2L)
@@ -661,22 +684,22 @@ class OverlayService : Service() {
                     if (!moved && hypot(dx, dy) > slop) {
                         moved = true
                         main.removeCallbacks(longPress)
-                        if (settings.centerQuits) showTarget()
+                        showTargets()
                     }
                     if (moved) {
                         val x = startX + dx.toInt()
                         val y = startY + dy.toInt()
-                        val over = nearTarget(x, y)
-                        if (over != overTarget) {
-                            overTarget = over
-                            highlightTarget(over)
-                            if (over) v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        val near = targetNear(x, y)
+                        if (near !== snapped) {
+                            snapped?.let { restyle(it, active = false) }
+                            near?.let { restyle(it, active = true) }
+                            snapped = near
+                            if (near != null) v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                         }
-                        if (over) {
-                            // jak w Messengerze: blisko krzyzyka przycisk sam do niego przeskakuje
-                            val screen = screenSize()
-                            buttonParams.x = (screen.x - buttonParams.width) / 2
-                            buttonParams.y = (screen.y - buttonParams.height) / 2
+                        if (near != null) {
+                            // jak w Messengerze: blisko miejsca przycisk sam do niego przeskakuje
+                            buttonParams.x = near.center.x - buttonParams.width / 2
+                            buttonParams.y = near.center.y - buttonParams.height / 2
                         } else {
                             buttonParams.x = x
                             buttonParams.y = y
@@ -687,23 +710,48 @@ class OverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     main.removeCallbacks(longPress)
-                    hideTarget()
-                    if (overTarget) {
-                        v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        quitApp()
-                    } else if (!moved && !longPressed) {
-                        v.performClick()
-                        onTap()
+                    val drop = snapped?.drop
+                    hideTargets()
+                    val mode = drop?.mode
+                    when {
+                        drop == Drop.QUIT -> {
+                            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            quitApp()
+                        }
+                        mode != null -> {
+                            // przycisk wraca na swoje miejsce, zeby nie zostal w rogu
+                            buttonParams.x = startX
+                            buttonParams.y = startY
+                            wm.updateViewLayout(v, buttonParams)
+                            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            switchMode(mode)
+                        }
+                        !moved && !longPressed -> {
+                            v.performClick()
+                            onTap()
+                        }
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(longPress)
-                    hideTarget()
+                    hideTargets()
                 }
             }
             return true
         }
+
+        private fun restyle(target: Target, active: Boolean) {
+            styleTarget(target, active)
+            wm.updateViewLayout(target.view, target.params)
+        }
     }
+
+    private class Target(
+        val drop: Drop,
+        val view: TextView,
+        val params: WindowManager.LayoutParams,
+        val center: DropZones.Center,
+    )
 
     // --- pomocnicze ---
 
@@ -743,10 +791,7 @@ class OverlayService : Service() {
         private const val QUIET_BUTTON_DP = 32
         private const val QUIET_COLOR = 0xFF808080.toInt()
         private const val QUIET_ALPHA = 0.35f
-        private const val TARGET_DP = 64
-        private const val TARGET_ACTIVE_DP = 80
-        // z tej odleglosci od srodka ekranu przycisk przyciaga sie do krzyzyka
-        private const val TARGET_PULL_DP = 72
+        private const val NOTICE_MS = 1500L
         private const val TAP_MARK_DP = 28
         private const val TAP_MARK_MS = 450L
     }

@@ -41,18 +41,23 @@ object SpeedTest {
         return Answerer.create(settings).use { answerer ->
             // jak w dymku: polaczenie otwarte zawczasu
             answerer.warmUp()
+            val unsure = Answer(CORRECT, QUESTION, confidence = 50)
             listOf(
                 settings.model.label,
-                measure("bez wyszukiwania") { answerer.ask(image) },
+                measure("bez myślenia (Szybki, Zbalansowany)", listOf(Mode.QUICK, Mode.BALANCED)) {
+                    answerer.ask(image, Mode.BALANCED)
+                },
+                measure("dłuższe myślenie (Dokładny)", listOf(Mode.ACCURATE)) { answerer.ask(image, Mode.ACCURATE) },
                 // jak w dymku po niepewnej odpowiedzi: druga proba z wyszukiwarka
-                measure("z wyszukiwaniem") {
-                    answerer.ask(image, unsure = Answer(CORRECT, QUESTION, confidence = 50)).copy(searched = true)
+                measure("z wyszukiwaniem (do 2, jak Zbalansowany)", Mode.entries) {
+                    answerer.ask(image, Mode.BALANCED, unsure).copy(searched = true)
                 },
             ).joinToString("\n")
         }
     }
 
-    private fun measure(name: String, ask: () -> Answer): String {
+    /** Czas i ocena odpowiedzi; [modes]: w ktorych trybach takie zapytanie pada, zeby sprawdzic progi pewnosci. */
+    private fun measure(name: String, modes: List<Mode>, ask: () -> Answer): String {
         val start = SystemClock.elapsedRealtime()
         val answer = ask()
         val seconds = (SystemClock.elapsedRealtime() - start) / 1000.0
@@ -62,11 +67,12 @@ object SpeedTest {
             val good = options.first { it.text == CORRECT }
             val correct = answer.text.contains(CORRECT) && answer.shape == good.shape
             val hit = answer.tap?.let { good.box.contains(it.x, it.y) } == true
-            listOfNotNull(answer.shape?.emoji, answer.text).joinToString(" ") +
+            val shown = modes.filter { answer.sureIn(it) }.joinToString { it.label }.ifEmpty { "żadnym (Nie wiem)" }
+            listOfNotNull(answer.shape?.glyph, answer.text).joinToString(" ") +
                 (if (correct) ", poprawna ✓" else ", błędna ✗") +
-                ", pewność ${answer.confidence}%" + (if (answer.sure) " ✓" else " ✗ (dymek pokazałby 🤷)") +
+                ", pewność ${answer.confidence}%, pokazałby w trybie: $shown" +
                 (if (answer.searched) ", wyszukiwań: ${answer.searches}" else "") +
-                (if (hit) ", kliknięcie trafia ✓" else ", kliknięcie pudłuje ✗")
+                (if (hit) ", punkt kliknięcia trafia ✓" else ", punkt kliknięcia pudłuje ✗")
         }
         return String.format(Locale("pl"), "• %s: %.1f s, %s", name, seconds, result)
     }

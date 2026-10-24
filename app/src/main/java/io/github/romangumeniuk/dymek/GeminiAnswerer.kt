@@ -13,13 +13,14 @@ import org.json.JSONObject
  */
 class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice) : Answerer {
 
-    override fun ask(image: String, unsure: Answer?): Answer {
+    override fun ask(image: String, mode: Mode, unsure: Answer?): Answer {
         val search = unsure != null
-        val prompt = unsure?.let { Answerer.searchPrompt(it) } ?: Answerer.USER_PROMPT
-        var result = send(requestBody(image, prompt, search, withThinkingLevel = true))
+        // Gemini nie ma limitu wyszukiwan w API, wiec liczbe podaje tylko polecenie
+        val prompt = unsure?.let { Answerer.searchPrompt(it, mode) } ?: Answerer.USER_PROMPT
+        var result = send(requestBody(image, prompt, search, thinkingLevel(mode)))
         // gdyby model nie znal poziomu myslenia, ponow bez niego
         if (result.code == 400 && result.body.contains("thinking", ignoreCase = true)) {
-            result = send(requestBody(image, prompt, search, withThinkingLevel = false))
+            result = send(requestBody(image, prompt, search, thinkingLevel = null))
         }
         return when {
             result.code == -1 -> Answer.error("Brak połączenia z internetem.")
@@ -50,12 +51,17 @@ class GeminiAnswerer(private val apiKey: String, private val model: ModelChoice)
 
     override fun close() = Unit
 
-    private fun requestBody(imageBase64: String, prompt: String, search: Boolean, withThinkingLevel: Boolean): String {
-        val generationConfig = JSONObject().put("maxOutputTokens", 1024)
-        if (withThinkingLevel) {
-            // najnizszy poziom myslenia, jaki model obsluguje: w quizie liczy sie czas
-            val level = if (model == ModelChoice.GEMINI_FLASH) "low" else "minimal"
-            generationConfig.put("thinkingConfig", JSONObject().put("thinkingLevel", level))
+    // najnizszy poziom myslenia, jaki model obsluguje, bo w quizie liczy sie czas; tryb Dokladny o stopien wyzej
+    private fun thinkingLevel(mode: Mode): String = when {
+        model == ModelChoice.GEMINI_FLASH -> if (mode.think) "medium" else "low"
+        else -> if (mode.think) "low" else "minimal"
+    }
+
+    private fun requestBody(imageBase64: String, prompt: String, search: Boolean, thinkingLevel: String?): String {
+        // myslenie zuzywa tokeny, zanim model napisze JSON, wiec potrzebuje zapasu
+        val generationConfig = JSONObject().put("maxOutputTokens", if (thinkingLevel == "minimal") 1024 else 4096)
+        if (thinkingLevel != null) {
+            generationConfig.put("thinkingConfig", JSONObject().put("thinkingLevel", thinkingLevel))
         }
         val body = JSONObject()
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(text(Answerer.SYSTEM_PROMPT))))

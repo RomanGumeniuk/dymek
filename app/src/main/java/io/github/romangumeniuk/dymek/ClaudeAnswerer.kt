@@ -24,21 +24,26 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
         .apiKey(apiKey)
         .build()
 
-    override fun ask(image: String, unsure: Answer?): Answer {
+    override fun ask(image: String, mode: Mode, unsure: Answer?): Answer {
         val search = unsure != null
+        val thinks = mode.think || model == ModelChoice.OPUS
         val builder = MessageCreateParams.builder()
             .model(model.id)
-            // Opus zawsze mysli, a wyszukiwanie doklada kilka krokow, wiec oba potrzebuja miejsca
+            // myslenie i wyszukiwanie dokladaja kilka krokow, wiec potrzebuja miejsca
             .maxTokens(
                 when {
-                    model == ModelChoice.OPUS -> 8000L
+                    thinks -> 8000L
                     search -> 2048L
                     else -> 512L
                 }
             )
             .system(Answerer.SYSTEM_PROMPT)
-            // niski wysilek = szybka odpowiedz, a w quizie liczy sie czas
-            .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+            // niski wysilek = szybka odpowiedz, a w quizie liczy sie czas; tryb Dokladny mysli dluzej
+            .outputConfig(
+                OutputConfig.builder()
+                    .effort(if (mode.think) OutputConfig.Effort.MEDIUM else OutputConfig.Effort.LOW)
+                    .build()
+            )
             .addUserMessageOfBlockParams(
                 listOf(
                     ContentBlockParam.ofImage(
@@ -53,7 +58,7 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
                     ),
                     ContentBlockParam.ofText(
                         TextBlockParam.builder()
-                            .text(unsure?.let { Answerer.searchPrompt(it) } ?: Answerer.USER_PROMPT)
+                            .text(unsure?.let { Answerer.searchPrompt(it, mode) } ?: Answerer.USER_PROMPT)
                             .build()
                     ),
                 )
@@ -61,22 +66,23 @@ class ClaudeAnswerer(apiKey: String, private val model: ModelChoice) : Answerer 
         if (search) {
             // Haiku zna tylko podstawowa wyszukiwarke, Sonnet i Opus nowsza, z filtrowaniem wynikow
             if (model == ModelChoice.HAIKU) {
-                builder.addTool(WebSearchTool20250305.builder().maxUses(2L).build())
+                builder.addTool(WebSearchTool20250305.builder().maxUses(mode.maxSearches.toLong()).build())
             } else {
-                builder.addTool(WebSearchTool20260209.builder().maxUses(2L).build())
+                builder.addTool(WebSearchTool20260209.builder().maxUses(mode.maxSearches.toLong()).build())
             }
         }
-        when (model) {
-            // bez myslenia odpowiedz przychodzi najszybciej
-            ModelChoice.HAIKU ->
-                builder.putAdditionalBodyProperty("thinking", JsonValue.from(mapOf("type" to "disabled")))
-            ModelChoice.SONNET ->
-                builder.putAdditionalBodyProperty("thinking", JsonValue.from(mapOf("type" to "between_tools")))
-            else -> {
-                // Opus nie wylacza myslenia; gdy odmowi, serwer sam ponawia na innym modelu
+        when {
+            // mysli sam, ile trzeba (domyslne myslenie adaptacyjne); gdy odmowi, serwer ponawia na innym
+            // modelu, czego Haiku nie ma
+            thinks -> if (model != ModelChoice.HAIKU) {
                 builder.putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
                 builder.putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
             }
+            // bez myslenia odpowiedz przychodzi najszybciej
+            model == ModelChoice.HAIKU ->
+                builder.putAdditionalBodyProperty("thinking", JsonValue.from(mapOf("type" to "disabled")))
+            else ->
+                builder.putAdditionalBodyProperty("thinking", JsonValue.from(mapOf("type" to "between_tools")))
         }
 
         val response = try {

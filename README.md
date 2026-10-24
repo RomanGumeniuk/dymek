@@ -26,6 +26,9 @@ albo sama ją klika. Do wyboru płatny **Claude** albo darmowy **Gemini**.
 | Stuknięcie dymka | zamyka dymek |
 | Przeciągnięcie | przesuwa przycisk |
 | Przeciągnięcie na środek ekranu (na `✕`) | jak w Messengerze: przycisk przyciąga się do krzyżyka, puszczenie zamyka całą aplikację, także z listy ostatnich |
+| Przeciągnięcie do lewego górnego rogu | tryb **Szybki** (przycisk wraca na swoje miejsce) |
+| Przeciągnięcie do prawego górnego rogu | tryb **Dokładny** |
+| Przeciągnięcie na dół ekranu | tryb **Zbalansowany** |
 | Przytrzymanie | wyłącza Dymek |
 
 W ustawieniach są dwie opcje przycisku (działają od razu, także przy włączonym dymku):
@@ -34,11 +37,22 @@ W ustawieniach są dwie opcje przycisku (działają od razu, także przy włącz
 - **Przeciągnięcie na środek ekranu zamyka całą aplikację:** domyślnie włączone. W czasie przeciągania
   na środku ekranu pojawia się kółko z `✕`; po upuszczeniu na nim dymek się wyłącza, a aplikacja zamyka.
 
+## Tryby
+
+AI podaje pewność w procentach. Gdy jest jej za mało, dymek pyta drugi raz, a model musi najpierw wyszukać odpowiedź
+w internecie (Google Search w Gemini, web search w Claude; w Claude wyszukiwania są dodatkowo płatne).
+
+| Tryb | Bez internetu wystarcza | Inaczej | Po wyszukaniu wystarcza | Myślenie |
+| --- | --- | --- | --- | --- |
+| Szybki (do łatwych pytań) | 60% | 1 wyszukiwanie | 50% | najkrótsze |
+| Zbalansowany (domyślny) | 80% | do 2 wyszukiwań | 60% | najkrótsze |
+| Dokładny | 90% | do 3 wyszukiwań | 70% | dłuższe |
+
+Tryb wybiera się w aplikacji albo w trakcie quizu, przeciągając przycisk do rogu u góry albo na dół ekranu.
+Obwódka przycisku pokazuje tryb: żółta (Szybki), biała (Zbalansowany), niebieska (Dokładny).
+
 ## Odpowiedzi
 
-- AI podaje pewność w procentach. Bez internetu odpowiedź musi mieć co najmniej 90%, inaczej dymek pyta drugi raz,
-  a model musi najpierw wyszukać odpowiedź w internecie (Google Search w Gemini, web search w Claude).
-  Po wyszukaniu wystarcza 70%. Można to wyłączyć; w Claude wyszukiwania są dodatkowo płatne.
 - Niepewnej odpowiedzi dymek nie pokazuje ani nie klika: zamiast niej „Nie wiem” z pewnością, np. `Nie wiem 55%`
   (w klasycznym wyglądzie `🤷 55%`).
 - W Kahoot dymek pokazuje sam kształt poprawnej odpowiedzi: kolorowe ▲ ◆ ● ■ (w klasycznym wyglądzie 🔺 🔷 🟡 🟩).
@@ -73,8 +87,9 @@ Modele, od najszybszego:
 | Claude Opus 5.5 | płatny | najdokładniejszy, wolniejszy |
 
 Pod dymkiem widać czas od stuknięcia do odpowiedzi, więc łatwo porównać modele.
-Przycisk **Testuj wybrany model** w aplikacji sprawdza model na wzorcowym pytaniu z Kahoot: czas, poprawność
-i trafienie kliknięcia, raz bez wyszukiwania i raz z wyszukiwaniem.
+Przycisk **Testuj wybrany model** w aplikacji sprawdza model na wzorcowym pytaniu z Kahoot: czas, poprawność,
+pewność (w których trybach odpowiedź byłaby pokazana) i trafienie kliknięcia, bez myślenia, z dłuższym myśleniem
+i z wyszukiwaniem.
 
 ## Szybkość
 

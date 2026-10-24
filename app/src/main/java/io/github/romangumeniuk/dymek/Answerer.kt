@@ -9,25 +9,29 @@ import kotlin.math.roundToInt
 /** Odpowiada na pytanie ze zrzutu ekranu: tekst do dymka i miejsce do klikniecia. */
 interface Answerer : AutoCloseable {
     /**
-     * Jedno zapytanie do modelu o zrzut (JPEG w base64). Z [unsure], czyli wczesniejsza niepewna odpowiedzia,
-     * model dostaje wyszukiwarke i ma sprawdzic odpowiedz w internecie. Nigdy nie rzuca bledow API: zwraca [Answer.error].
+     * Jedno zapytanie do modelu o zrzut (JPEG w base64); w trybie z [Mode.think] model dluzej mysli.
+     * Z [unsure], czyli wczesniejsza niepewna odpowiedzia, model dostaje wyszukiwarke i ma sprawdzic
+     * odpowiedz w internecie. Nigdy nie rzuca bledow API: zwraca [Answer.error].
      */
-    fun ask(image: String, unsure: Answer? = null): Answer
+    fun ask(image: String, mode: Mode, unsure: Answer? = null): Answer
 
     /** Otwiera polaczenie z API zawczasu (TLS), zeby samo pytanie poszlo szybciej. Bledy ignoruje. */
     fun warmUp() {}
 
     /**
-     * Szybka odpowiedz, a gdy model nie jest pewien, druga proba z wyszukiwaniem w internecie;
-     * [onSearch] jest wolane tuz przed nia (z watku roboczego).
+     * Odpowiedz w danym trybie: najpierw bez internetu, a gdy model nie jest dosc pewien i tryb na to pozwala,
+     * druga proba z wyszukiwaniem; [onSearch] jest wolane tuz przed nia (z watku roboczego).
      */
-    fun solve(screen: Bitmap, searchWhenUnsure: Boolean, onSearch: () -> Unit = {}): Answer {
-        val image = toJpegBase64(screen)
-        val first = ask(image)
+    fun solve(screen: Bitmap, mode: Mode, onSearch: () -> Unit = {}): Answer =
+        solveImage(toJpegBase64(screen), mode, onSearch)
+
+    /** [solve] dla zrzutu juz zakodowanego jako JPEG w base64. */
+    fun solveImage(image: String, mode: Mode, onSearch: () -> Unit = {}): Answer {
+        val first = ask(image, mode)
         // bez pytania na ekranie nie ma czego szukac
-        if (first.error || first.sure || first.question.isEmpty() || !searchWhenUnsure) return first
+        if (first.error || first.sureIn(mode) || first.question.isEmpty() || mode.maxSearches == 0) return first
         onSearch()
-        return ask(image, unsure = first).copy(searched = true)
+        return ask(image, mode, unsure = first).copy(searched = true)
     }
 
     companion object {
@@ -42,11 +46,12 @@ interface Answerer : AutoCloseable {
         const val USER_PROMPT = "Odpowiedz na pytanie z tego ekranu."
 
         /** Druga proba: model ma najpierw wyszukac odpowiedz, a nie odpowiadac z pamieci. */
-        fun searchPrompt(unsure: Answer) =
+        fun searchPrompt(unsure: Answer, mode: Mode) =
             "Bez internetu nie byłeś pewien odpowiedzi (strzał: „${unsure.text}”, pewność ${unsure.confidence}%). " +
                 "Zanim odpowiesz, wyszukaj w internecie odpowiedź na pytanie „${unsure.question}” " +
-                "(co najmniej jedno, najwyżej dwa wyszukiwania). Potem odpowiedz tym samym jednym wierszem JSON; " +
-                "p to teraz to, jak mocno znalezione źródła potwierdzają odpowiedź."
+                (if (mode.maxSearches == 1) "(jedno wyszukiwanie). " else "(od jednego do ${mode.maxSearches} wyszukiwań). ") +
+                "Potem odpowiedz tym samym jednym wierszem JSON; p to teraz to, jak mocno znalezione źródła " +
+                "potwierdzają odpowiedź."
 
         val SYSTEM_PROMPT = """
             Dostajesz zrzut ekranu telefonu z quizem na czas (Kahoot, Mentimeter, Quizizz, Wayground, Blooket,

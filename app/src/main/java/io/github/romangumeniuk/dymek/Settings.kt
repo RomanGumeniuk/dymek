@@ -14,6 +14,25 @@ enum class ModelChoice(val id: String, val label: String, val provider: Provider
     OPUS("claude-opus-5-5", "Claude Opus 5.5 (najdokładniejszy, wolniejszy)", Provider.CLAUDE),
 }
 
+/**
+ * Jak starannie odpowiadac: pewnosc wystarczajaca bez internetu ([sureFirst]); przy mniejszej druga proba
+ * z najwyzej [maxSearches] wyszukiwaniami w internecie i wtedy wystarcza [sureSearched]; [think]: model mysli dluzej.
+ * [short] miesci sie w kolku na ekranie, [color] to obwodka przycisku w tym trybie.
+ */
+enum class Mode(
+    val label: String,
+    val short: String,
+    val color: Int,
+    val sureFirst: Int,
+    val maxSearches: Int,
+    val sureSearched: Int,
+    val think: Boolean,
+) {
+    QUICK("Szybki", "Szybki", 0xFFFFC107.toInt(), 60, maxSearches = 1, sureSearched = 50, think = false),
+    BALANCED("Zbalansowany", "Balans", 0xFFFFFFFF.toInt(), 80, maxSearches = 2, sureSearched = 60, think = false),
+    ACCURATE("Dokładny", "Dokładny", 0xFF42A5F5.toInt(), 90, maxSearches = 3, sureSearched = 70, think = true),
+}
+
 /** Klucze API, model i wyglad przycisku w prywatnych ustawieniach aplikacji (bez kopii w chmurze: allowBackup=false). */
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("dymek", Context.MODE_PRIVATE)
@@ -46,10 +65,10 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_SLICK, true)
         set(value) = prefs.edit().putBoolean(KEY_SLICK, value).apply()
 
-    /** Gdy model nie jest pewien, druga proba z wyszukiwaniem w internecie. */
-    var searchWhenUnsure: Boolean
-        get() = prefs.getBoolean(KEY_SEARCH, true)
-        set(value) = prefs.edit().putBoolean(KEY_SEARCH, value).apply()
+    /** Tryb odpowiadania; zmienia sie tez przeciagnieciem przycisku do rogu albo na dol ekranu. */
+    var mode: Mode
+        get() = Mode.entries.firstOrNull { it.name == prefs.getString(KEY_MODE, null) } ?: Mode.BALANCED
+        set(value) = prefs.edit().putString(KEY_MODE, value.name).apply()
 
     /** Autoclicker sam stuka pewna odpowiedz (wymaga wlaczonej uslugi [TapService]). */
     var autoClick: Boolean
@@ -79,7 +98,7 @@ class Settings(context: Context) {
         private const val KEY_QUIET = "quiet_button"
         private const val KEY_CENTER_QUITS = "center_quits"
         private const val KEY_SLICK = "slick_bubble"
-        private const val KEY_SEARCH = "search_when_unsure"
+        private const val KEY_MODE = "mode"
         private const val KEY_AUTO_CLICK = "auto_click"
         private const val KEY_CLICK_DELAY = "click_delay"
     }

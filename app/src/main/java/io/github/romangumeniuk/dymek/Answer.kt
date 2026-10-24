@@ -28,18 +28,16 @@ data class Answer(
     val searched: Boolean = false,
     val searches: Int = 0,
 ) {
-    /** Tylko taka odpowiedz pokazujemy i klikamy; po sprawdzeniu w internecie wystarcza nizsza pewnosc. */
-    val sure: Boolean
-        get() = !error && text.isNotEmpty() && confidence >= if (searched) SEARCHED_SURE_PERCENT else SURE_PERCENT
+    /** Tylko taka odpowiedz pokazujemy i klikamy; ile pewnosci wystarcza, zalezy od trybu i od wyszukania. */
+    fun sureIn(mode: Mode): Boolean =
+        !error && text.isNotEmpty() && confidence >= if (searched) mode.sureSearched else mode.sureFirst
 
     /** Tresc dymka: przy Kahoot sam ksztalt, ktory widac jednym spojrzeniem. */
     val label: String get() = shape?.emoji ?: text
 
     companion object {
-        // szybkie modele chetnie mowia "pewne" nawet przy zgadywaniu, wiec prog jest wysoki
+        // w poleceniu dla modelu: od tylu procent "znam to na pewno"; szybkie modele chetnie zawyzaja pewnosc
         const val SURE_PERCENT = 90
-        // po wyszukaniu model ma zrodla, a ostroznie ocenia je nizej niz pamiec
-        const val SEARCHED_SURE_PERCENT = 70
 
         fun error(message: String) = Answer(message, error = true)
 
